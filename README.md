@@ -1,11 +1,12 @@
-# Artifact: Union Types with Disjoint Switches
+# Artifact: Union Types with Disjoint Switches and Disjoint Functions
 
 Title of the ECOOP 2022 paper: Union Types with Disjoint Switches
 
 ## Overview: What does the artifact comprise?
 
-This artifact contains the mechanical formalization of the calculi
-associated with the paper Union Types with Disjoint Switches.
+This artifact contains the mechanical formalization of the extended
+calculi of adding disjoint function types associated with the paper
+Union Types with Disjoint Switches.
 All of the metatheory has been formalized in Coq theorem prover.
 We provide a docker image as well the code archive.
 
