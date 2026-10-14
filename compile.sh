@@ -3,7 +3,7 @@
 # Prefers the artifact Docker image when the daemon is available.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-IMAGE="${SWITCHES_IMAGE:-baberrehman/switches}"
+IMAGE="${SWITCHES_IMAGE:-disjoint-switches-functions}"
 
 compile_dir() {
   local dir="$1"

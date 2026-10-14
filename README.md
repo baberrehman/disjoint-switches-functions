@@ -166,14 +166,12 @@ We provide two alternatives to run the artifact:
 # 1) Docker Image #
 
 This is the easiest way to run the artifact.
-We provide a docker image with all the dependencies installed in it.
+The `Dockerfile` in this repository installs Coq 8.13, TLC, and Metalib.
 
-This section explains how to pull the docker image of artifact from docker repo and use it.
-Run the following commands one by one in terminal:
+Build and start the image from the repository root:
 
-1. `$ docker pull baberrehman/switches`
-2. `$ docker run -it baberrehman/switches`
-
+1. `$ docker build -t disjoint-switches-functions .`
+2. `$ docker run --rm -it disjoint-switches-functions`
 
 **Note:** Please note that **$** symbol appearing in
 the beginning is not a part of the command.
