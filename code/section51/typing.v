@@ -180,6 +180,7 @@ Inductive typing (PG:envp) : env -> exp -> typ -> Prop :=    (* defn typing *)
  | typ_abs : forall (L:vars) (G:env) (e:exp) (A B:typ),
       okt PG G ->
       okenvp PG ->
+      inhabited PG G B ->
       ( forall x , x \notin  L  -> typing PG (G & x ~: A) (open_ee e (e_fvar x)) B)  ->
      typing PG G (e_abs A B e) (t_arrow A B)
  | typ_typeof : forall (L:vars) (G:env) (e:exp) (A:typ) (e1:exp) (B:typ) (e2:exp) (C:typ),
@@ -995,19 +996,19 @@ Proof.
    apply okt_push_inv in H0. destruct H0. auto. *)
  - (*case abs*)
    apply lc_e_abs with (L:=L).
-   + pick_fresh y. forwards*(?&Okt&?&?): H2 y.
+   + pick_fresh y. forwards*(?&Okt&?&?): H3 y.
      apply okt_push_inv in Okt. destructs Okt.
      eapply type_from_wft; eauto.
-   + pick_fresh y. forwards*(?&?&?&?): H2 y.
+   + pick_fresh y. forwards*(?&?&?&?): H3 y.
      eapply type_from_wft; eauto.
-   + intros y Fry. forwards*(?&?&?&?): H2 y.
+   + intros y Fry. forwards*(?&?&?&?): H3 y.
  - (*case abs*)
    pick_fresh x.
-   forwards* : H2 x. destructs H3.
-   apply okt_push_inv in H4. destructs H4.
-   rewrite (append_empty_right ((G & x ~: A))) in H6.
-   apply wft_strengthen in H6.
-   rewrite~ <- append_empty_right in H6.
+   forwards* : H3 x. destructs H4.
+   apply okt_push_inv in H5. destructs H5.
+   rewrite (append_empty_right ((G & x ~: A))) in H7.
+   apply wft_strengthen in H7.
+   rewrite~ <- append_empty_right in H7.
  - (*case typeof*)
    apply lc_e_typeof with (L:=L); intros. destructs~ IHtyping.
    destructs~ IHtyping. inverts H8.
@@ -4687,23 +4688,54 @@ Proof.
   apply* ok_from_okt.
 Qed.
 
+Lemma rangeleaves_unique : forall PG E A l1,
+  RangeLeaves PG E A l1 ->
+  forall l2, RangeLeaves PG E A l2 ->
+  l1 = l2.
+Proof.
+  introv rl1. induction rl1; introv rl2; inverts rl2; try reflexivity.
+  - match goal with
+    | Hr : RangeLeaves _ _ _ _ |- _ =>
+        forwards* Eqr: IHrl1 Hr; subst; reflexivity
+    end.
+  - forwards*: IHrl1_1 H1. forwards*: IHrl1_2 H3. subst. reflexivity.
+  - forwards*: IHrl1_1 H1. forwards*: IHrl1_2 H3. subst. reflexivity.
+Qed.
+
 Lemma arranges_unique : forall PG E A l1,
   ArrowRanges PG E A l1 ->
   forall l2, ArrowRanges PG E A l2 ->
   l1 = l2.
 Proof.
-  introv ar1. induction ar1; introv ar2; inverts ar2; auto.
-  - forwards*: IHar1_1 H1. forwards*: IHar1_2 H3. subst. auto.
-  - forwards*: IHar1_1 H1. forwards*: IHar1_2 H3. subst. auto.
-  - admit.
-Admitted.
+  introv ar1. induction ar1; introv ar2; inverts ar2; try reflexivity.
+  - match goal with
+    | Hr : RangeLeaves _ _ _ _ |- _ =>
+        forwards* Eqr: rangeleaves_unique H Hr; subst; reflexivity
+    end.
+  - forwards*: IHar1_1 H1. forwards*: IHar1_2 H3. subst. reflexivity.
+  - forwards*: IHar1_1 H1. forwards*: IHar1_2 H3. subst. reflexivity.
+Qed.
+
+Lemma rangeleaves_weaken : forall F PG E G S l,
+  RangeLeaves PG (E & G) S l ->
+  okt PG (E & F & G) ->
+  RangeLeaves PG (E & F & G) S l.
+Proof.
+  intros. induction H; eauto; intros.
+  apply rl_fvar with (T:=T); auto.
+  apply* binds_weaken.
+  apply ok_from_okt in H0; auto.
+Qed.
+
+#[export]
+Hint Resolve rangeleaves_weaken : core.
 
 Lemma arranges_weaken : forall F PG E G S l,
   ArrowRanges PG (E & G) S l ->
   okt PG (E & F & G) ->
   ArrowRanges PG (E & F & G) S l.
 Proof.
-  intros. induction H; auto; intros.
+  intros. induction H; eauto; intros.
   apply ar_fvar with (T:=T); auto.
   apply* binds_weaken.
   apply ok_from_okt in H0; auto.
@@ -4760,6 +4792,18 @@ Proof.
     subst. auto.
 Qed.
 
+Lemma inhabited_weaken : forall PG E F G A,
+  inhabited PG (E & G) A ->
+  okt PG (E & F & G) ->
+  inhabited PG (E & F & G) A.
+Proof.
+  introv [C [OC Sub]] Ok.
+  exists C. split; auto. apply* sub_weakening.
+Qed.
+
+#[export]
+Hint Resolve inhabited_weaken : core.
+
 (* ********************************************************************** *)
 (** Typing Weakening *)
 
@@ -4779,14 +4823,14 @@ Proof.
     apply* sub_weakening.
   - pick_fresh y.
     apply typ_abs with (L:=((((((L \u fv_ee e) \u fv_te e) 
-      \u fv_tt A) \u fv_tt B) \u dom E) \u dom G) \u dom F); auto.
+      \u fv_tt A) \u fv_tt B) \u dom E) \u dom G) \u dom F); eauto.
     intros.
-    forwards~: (H1 x).
-    apply_ih_bind (H2 x); eauto.
+    forwards~: (H2 x).
+    apply_ih_bind (H3 x); eauto.
     apply* okt_typ.
     apply* wft_weaken.
-    apply typing_regular in H4. destructs~ H4.
-    apply okt_push_inv in H5. destructs~ H5.
+    apply typing_regular in H5. destructs~ H5.
+    apply okt_push_inv in H6. destructs~ H6.
     apply ok_from_okt in Ok; auto.
   - pick_fresh y.
     apply typ_typeof with (L:=(((((((L \u fv_ee e) 
@@ -5257,6 +5301,53 @@ Proof.
   }
 Qed.
 
+Lemma subset_inter_empty : forall l1 l2 l1' l2',
+  subset l1' l1 ->
+  subset l2' l2 ->
+  (l1 `inter` l2) = [] ->
+  (l1' `inter` l2') = [].
+Proof.
+  introv S1 S2 Em.
+  destruct (l1' `inter` l2') eqn:Eq; auto.
+  assert (IN: set_In t (l1' `inter` l2')).
+  { rewrite Eq. simpl. left. auto. }
+  apply set_inter_elim in IN. destruct IN as [I1 I2].
+  unfold subset in *.
+  forwards*: set_inter_intro eq_dec (S1 _ I1) (S2 _ I2).
+  rewrite Em in H. inverts H.
+Qed.
+
+Lemma rangeleaves_rebind : forall PG V F U E X A l,
+  RangeLeaves PG (E & X ~*: V & F) A l ->
+  okt PG (E & X ~*: U & F) ->
+  RangeLeaves PG (E & X ~*: U & F) A l.
+Proof.
+  introv RL Ok.
+  gen_eq : (E & X ~*: V & F) as K. gen E F.
+  induction RL; intros E0 F EQ Ok; subst; eauto.
+  binds_cases H.
+  - apply rl_fvar with (T:=T). apply* binds_concat_left_ok.
+    apply* ok_from_okt.
+  - apply rl_fvar with (T:=U). apply* binds_middle_eq.
+  - apply rl_fvar with (T:=T). apply* binds_concat_right.
+Qed.
+
+Lemma arranges_rebind : forall PG V F U E X A l,
+  ArrowRanges PG (E & X ~*: V & F) A l ->
+  okt PG (E & X ~*: U & F) ->
+  ArrowRanges PG (E & X ~*: U & F) A l.
+Proof.
+  introv AR Ok.
+  gen_eq : (E & X ~*: V & F) as K. gen E F.
+  induction AR; intros E0 F EQ Ok; subst; eauto.
+  - apply ar_arrow. apply* rangeleaves_rebind.
+  - binds_cases H.
+    + apply ar_fvar with (T:=T). apply* binds_concat_left_ok.
+      apply* ok_from_okt.
+    + apply ar_fvar with (T:=U). apply* binds_middle_eq.
+    + apply ar_fvar with (T:=T). apply* binds_concat_right.
+Qed.
+
 (* Disjointness Narrowing *)
 
 (* Lemma 26 *)
@@ -5269,16 +5360,41 @@ Lemma disj_narrowing : forall PG Q F E Z P S T,
 Proof.
   unfold DisjAlgo. intros.
   destruct H as [OKP [OK [WFS [WFT [HOSubs HAR]]]]].
-  forwards*(_&WFP&WFQ&ok): sub_regular H0.
-  forwards*: okt_narrow OK WFQ.
+  forwards*(_&WFP&WFQ&okE): sub_regular H0.
+  forwards* OkQ: okt_narrow OK WFQ.
+  forwards*(OkE&ZfreshE&ZfreshF&WFPb&GP): okt_concat_inv_tt OK.
   splits; auto.
-  apply wft_narrow with (V:=P); auto.
-  apply wft_narrow with (V:=P); auto.
-  - introv osubs. destruct osubs as [osub1 osub2].
-    admit.
-  - introv ars. destruct ars as [ar1 ar2].
-    admit.
-Admitted.
+  - apply wft_narrow with (V:=P); auto.
+  - apply wft_narrow with (V:=P); auto.
+  - intros lQ1 lQ2 osubs. destruct osubs as [osub1 osub2].
+    destruct (exists_osubtypes _ _ _ OK WFS) as [lP1 os1].
+    destruct (exists_osubtypes _ _ _ OK WFT) as [lP2 os2].
+    assert (Heq: (lP1 `inter` lP2) = []).
+    { apply HOSubs. split; auto. }
+    forwards* S1: (>> osubs_narrowing_empty os1 OK H0 GP H1 osub1).
+    forwards* S2: (>> osubs_narrowing_empty os2 OK H0 GP H1 osub2).
+    apply subset_inter_empty with (l1:=lP1) (l2:=lP2); auto.
+  - intros rQ1 rQ2 ars. destruct ars as [ar1 ar2].
+    destruct (exists_arrowranges _ _ _ OK WFS) as [rP1 ar1P].
+    destruct (exists_arrowranges _ _ _ OK WFT) as [rP2 ar2P].
+    assert (HeqR: (rP1 `inter` rP2) = []).
+    { apply HAR. split; auto. }
+    forwards* ar1Q: arranges_rebind ar1P OkQ.
+    forwards* ar2Q: arranges_rebind ar2P OkQ.
+    forwards* Eq1: arranges_unique ar1 ar1Q.
+    forwards* Eq2: arranges_unique ar2 ar2Q.
+    subst. exact HeqR.
+Qed.
+
+Lemma inhabited_narrow : forall PG E F Z P Q A,
+  inhabited PG (E & Z ~*: P & F) A ->
+  sub PG E P Q ->
+  okt PG (E & Z ~*: Q & F) ->
+  inhabited PG (E & Z ~*: Q & F) A.
+Proof.
+  introv [C [OC Sub]] PsubQ Ok.
+  exists C. split; auto. apply* sub_narrowing_aux.
+Qed.
 
 (********************************************)
 (** Typing Narrowing **)
@@ -5307,9 +5423,11 @@ Proof.
   - pick_fresh y.
     apply typ_abs with (L:=(((((((((L \u \{ X}) \u fv_ee e) 
       \u fv_te e) \u fv_tt Q) \u fv_tt P) \u fv_tt A) \u
-      fv_tt B) \u dom E) \u dom F)); intros; auto.
-    apply* okt_narrow.
-    apply_ih_bind* H6.
+      fv_tt B) \u dom E) \u dom F)).
+    + apply* okt_narrow.
+    + auto.
+    + eapply inhabited_narrow; [ eassumption | exact PsubQ | apply* okt_narrow ].
+    + intros. apply_ih_bind* H7.
   - pick_fresh y.
     apply typ_typeof with (L:=((((((((((((((L \u \{ X}) \u fv_ee e) 
       \u fv_ee e1) \u fv_ee e2) \u fv_te e) \u fv_te e1) \u
@@ -5353,6 +5471,14 @@ Proof.
     apply* arranges_weaken.
 Qed.
 
+Lemma inhabited_strengthen : forall PG E F x U A,
+  inhabited PG (E & x ~: U & F) A ->
+  inhabited PG (E & F) A.
+Proof.
+  introv [C [OC Sub]].
+  exists C. split; auto. apply* sub_strengthening.
+Qed.
+
 (* Preservation through term substitution *)
 
 Lemma typing_through_subst_ee : forall PG E F x T e u U,
@@ -5386,11 +5512,12 @@ inductions TypT; simpl.
    apply typ_abs with (L:=((((((((((L \u \{ x}) \u fv_ee u) 
      \u fv_ee e) \u fv_te u) \u fv_te e) \u fv_tt U) \u
      fv_tt A) \u fv_tt B) \u dom E) \u dom F)); intros; autos*.
+   apply* inhabited_strengthen.
    assert (x0 \notin L) by auto.
-   specialize (H2 x0 H4 E (F & x0 ~: A)).
+   specialize (H3 x0 H5 E (F & x0 ~: A)).
    rewrite* subst_ee_open_ee_var.
-   lets : H2 x U.
-   forwards* : H5.
+   lets : H3 x U.
+   forwards* : H6.
    rewrite~ concat_assoc.
    rewrite~ concat_assoc.
    rewrite~ <- concat_assoc.
@@ -5822,6 +5949,201 @@ Proof.
   }
 Qed.
 
+Lemma rangeleaves_in_all_ord : forall PG E A,
+  wft PG E A ->
+  forall l, RangeLeaves PG E A l ->
+  forall t, set_In t l -> set_In t (all_ord PG).
+Proof.
+  introv WF RL. gen l.
+  induction WF; intros l RL t IN; inverts RL.
+  - (* top *) assumption.
+  - (* int *) simpl in IN. destruct IN as [EQ|IN]; [|inverts IN]. subst.
+    simpl. left. reflexivity.
+  - (* bot *) inverts IN.
+  - (* arrow *) eapply IHWF2; eauto.
+  - (* union *) apply set_union_elim in IN. destruct IN; eauto.
+  - (* inter *) apply set_inter_elim in IN. destruct IN; eauto.
+  - (* fvar *) assumption.
+  - (* all *) simpl in IN. destruct IN as [EQ|IN]; [|inverts IN]. subst.
+    simpl. right. right. left. reflexivity.
+  - (* unit *) simpl in IN. destruct IN as [EQ|IN]; [|inverts IN]. subst.
+    simpl. right. left. reflexivity.
+  - (* prim *) simpl in IN. destruct IN as [EQ|IN].
+    + subst. simpl. right. right. right. apply* i_in_nat_to_types.
+    + simpl. right. right. right. apply* allsubtypes_in_to_domain.
+Qed.
+
+Lemma subset_compose : forall l1 l2 l3,
+  subset l1 l2 -> subset l2 l3 -> subset l1 l3.
+Proof.
+  unfold subset. intros. apply H0. apply* H.
+Qed.
+
+Lemma leaves_mono : forall PG E A B,
+  sub PG E A B ->
+  forall lA lB,
+  RangeLeaves PG E A lA ->
+  RangeLeaves PG E B lB ->
+  subset lA lB.
+Proof.
+  introv Sub. induction Sub; intros lA lB RA RB.
+  - inverts RB. subst. unfold subset. intros t Hin.
+    eapply rangeleaves_in_all_ord; eauto.
+  - inverts RA. inverts RB. apply subset_refl.
+  - inverts RA. inverts RB. apply subset_refl.
+  - inverts RA. inverts RB. apply* IHSub2.
+  - inverts RA.
+    forwards* S1: IHSub1 H1 RB.
+    forwards* S2: IHSub2 H3 RB.
+    apply* subset_union_elim.
+  - inverts RB.
+    match goal with
+    | Hr : RangeLeaves _ _ A1 _ |- _ =>
+        forwards* S1: IHSub RA Hr; apply* subset_union_introl
+    end.
+  - inverts RB.
+    match goal with
+    | Hr : RangeLeaves _ _ A2 _ |- _ =>
+        forwards* S1: IHSub RA Hr; apply* subset_union_intror
+    end.
+  - inverts RB.
+    match goal with
+    | Hr1 : RangeLeaves _ _ A1 _, Hr2 : RangeLeaves _ _ A2 _ |- _ =>
+        forwards* S1: IHSub1 RA Hr1;
+        forwards* S2: IHSub2 RA Hr2;
+        apply* subset_inter_elim_inv
+    end.
+  - inverts RA.
+    match goal with
+    | Hr : RangeLeaves _ _ A1 _ |- _ =>
+        forwards* S1: IHSub Hr RB; apply* subset_inter_eliml
+    end.
+  - inverts RA.
+    match goal with
+    | Hr : RangeLeaves _ _ A2 _ |- _ =>
+        forwards* S1: IHSub Hr RB; apply* subset_inter_elimr
+    end.
+  - inverts RA. apply empty_subset.
+  - inverts RA. inverts RB. apply subset_refl.
+  - inverts RA. inverts RB. apply subset_refl.
+  - inverts RA. inverts RB. apply subset_refl.
+  - inverts RA. inverts RB.
+    unfold subset. introv IN.
+    simpl in IN. destruct IN as [IN|IN].
+    + subst. simpl. right. auto.
+    + simpl. right.
+      forwards* (i&EQt): prim_type_in_nats_to_types IN.
+      subst. eapply p_in_sub; eauto.
+Qed.
+
+Lemma ord_rangeleaves_nonempty : forall PG E A l,
+  Ord A ->
+  RangeLeaves PG E A l ->
+  l <> [].
+Proof.
+  introv OD RL. induction OD; inverts RL; try discriminate.
+  - apply* IHOD.
+Qed.
+
+Lemma sub_arrow_ranges_subset : forall PG E S T,
+  sub PG E S T ->
+  forall A1 A2 lR lT,
+  S = t_arrow A1 A2 ->
+  RangeLeaves PG E A2 lR ->
+  ArrowRanges PG E T lT ->
+  subset lR lT.
+Proof.
+  introv Sub. induction Sub; intros A0 B0 lR lT EQ RL AR; subst;
+    try discriminate.
+  - inverts AR. inverts H1. unfold subset. intros t Hin.
+    eapply rangeleaves_in_all_ord; eauto.
+  - inverts EQ. inverts AR. apply* leaves_mono.
+  - inverts AR. apply subset_union_introl.
+    apply* IHSub.
+  - inverts AR. apply subset_union_intror.
+    apply* IHSub.
+  - inverts AR.
+    apply subset_inter_elim_inv.
+    + apply* IHSub1.
+    + apply* IHSub2.
+Qed.
+
+Lemma rangeleaves_subst_subset : forall PG E1 A l1,
+  RangeLeaves PG E1 A l1 ->
+  forall E2 Z P l2,
+  wft PG E2 P ->
+  okt PG E2 ->
+  RangeLeaves PG E2 (subst_tt Z P A) l2 ->
+  subset l2 l1.
+Proof.
+  introv RL1. induction RL1; intros E2 Z0 P0 lS WFP Ok RL2; simpl in RL2;
+    try solve [inversion RL2; subst; apply subset_refl].
+  - inversion RL2; subst. eapply IHRL1; eauto.
+  - inversion RL2; subst.
+    forwards* S1: (>> IHRL1_1 WFP Ok H1).
+    forwards* S2: (>> IHRL1_2 WFP Ok H3).
+    eapply subset_union_elim.
+    + apply* subset_union_introl.
+    + apply* subset_union_intror.
+  - inversion RL2; subst.
+    forwards* S1: (>> IHRL1_1 WFP Ok H1).
+    forwards* S2: (>> IHRL1_2 WFP Ok H3).
+    unfold subset in *. introv IN.
+    apply set_inter_elim in IN. destruct IN as [I1 I2].
+    apply set_inter_intro; auto.
+  - case_var.
+    + unfold subset. intros t Hin. eapply rangeleaves_in_all_ord; eauto.
+    + inversion RL2; subst; apply subset_refl.
+Qed.
+
+Lemma arrowranges_in_all_ord : forall PG E A,
+  wft PG E A ->
+  forall l, ArrowRanges PG E A l ->
+  forall t, set_In t l -> set_In t (all_ord PG).
+Proof.
+  introv WF AR. gen l.
+  assert (WFkeep := WF).
+  induction WF; intros l AR t IN; inverts AR.
+  - (* top *) assumption.
+  - (* int *) inverts IN.
+  - (* bot *) inverts IN.
+  - (* arrow *) inversion WFkeep; subst; eapply rangeleaves_in_all_ord; eauto.
+  - (* union *) apply set_union_elim in IN. destruct IN; eauto.
+  - (* inter *) apply set_inter_elim in IN. destruct IN; eauto.
+  - (* fvar *) assumption.
+  - (* all *) inverts IN.
+  - (* unit *) inverts IN.
+  - (* prim *) inverts IN.
+Qed.
+
+Lemma arranges_subst_subset : forall PG E1 A l1,
+  ArrowRanges PG E1 A l1 ->
+  forall E2 Z P l2,
+  wft PG E2 P ->
+  okt PG E2 ->
+  ArrowRanges PG E2 (subst_tt Z P A) l2 ->
+  subset l2 l1.
+Proof.
+  introv AR1. induction AR1; intros E2 Z0 P0 lS WFP Ok AR2; simpl in AR2;
+    try solve [inversion AR2; subst; apply subset_refl].
+  - inversion AR2; subst. eapply rangeleaves_subst_subset; eauto.
+  - inversion AR2; subst.
+    forwards* S1: (>> IHAR1_1 WFP Ok H1).
+    forwards* S2: (>> IHAR1_2 WFP Ok H3).
+    eapply subset_union_elim.
+    + apply* subset_union_introl.
+    + apply* subset_union_intror.
+  - inversion AR2; subst.
+    forwards* S1: (>> IHAR1_1 WFP Ok H1).
+    forwards* S2: (>> IHAR1_2 WFP Ok H3).
+    unfold subset in *. introv IN.
+    apply set_inter_elim in IN. destruct IN as [I1 I2].
+    apply set_inter_intro; auto.
+  - case_var.
+    + unfold subset. intros t Hin. eapply arrowranges_in_all_ord; eauto.
+    + inversion AR2; subst; apply subset_refl.
+Qed.
+
 (* Disjointness Substitution *)
 
 (* Lemma 25 *)
@@ -5852,16 +6174,33 @@ Proof.
     forwards*: okt_concat_inv_tt ok1.
     apply subset_empty_empty in H. auto.
   - introv ARs. destruct ARs as [AR1 AR2].
-    (* Substitution does not create new arrow-range overlaps
-       unless it already collapsed the ranges (forbidden by P *a Q). *)
     forwards* (r3&ar3): exists_arrowranges ok1 WFA.
     forwards* (r4&ar4): exists_arrowranges ok1 WFB.
     forwards* Heq: DisjAR r3 r4.
-    (* Substitution does not create new range overlaps. *)
-    admit.
-Admitted.
+    forwards* S1: arranges_subst_subset ar3 AR1.
+    forwards* S2: arranges_subst_subset ar4 AR2.
+    apply subset_inter_empty with (l1:=r3) (l2:=r4); auto.
+Qed.
 
 (* type substitution preserves typing *)
+
+Lemma ord_subst : forall Z P C,
+  Ord C -> Ord (subst_tt Z P C).
+Proof.
+  induction 1; simpl; auto.
+Qed.
+
+Lemma inhabited_subst : forall PG Q E F Z P B,
+  inhabited PG (E & Z ~*: Q & F) B ->
+  PG; E |= P *a Q ->
+  okt PG (E & map (subst_tb Z P) F) ->
+  inhabited PG (E & map (subst_tb Z P) F) (subst_tt Z P B).
+Proof.
+  introv [C [OC Sub]] Disj Ok.
+  exists (subst_tt Z P C). split.
+  - apply* ord_subst.
+  - apply* sub_through_subst_tt.
+Qed.
 
 Lemma typing_through_subst_te : forall PG Q E F Z e T P,
   typing PG (E & Z ~*: Q & F) e T ->
@@ -5893,8 +6232,9 @@ Proof.
   - pick_fresh y.
     apply typ_abs with (L:=(((((((((L \u \{ Z}) \u fv_ee e) \u fv_te e) \u fv_tt Q) \u fv_tt P) \u
     fv_tt A) \u fv_tt B) \u dom E) \u dom F)); auto.
+    apply* inhabited_subst.
     intros.
-    forwards*: H2 x (F & x ~: A).
+    forwards*: H3 x (F & x ~: A).
     (*repeatition*)
     rewrite map_concat.
     rewrite map_single.
@@ -5902,7 +6242,7 @@ Proof.
     rewrite concat_assoc.
     apply* okt_typ.
     assert (NOTIN: x \notin L) by auto.
-    apply (H1 x) in NOTIN.
+    apply (H2 x) in NOTIN.
     forwards* TEMP: NOTIN.
     apply typing_regular in TEMP. destruct TEMP as [okp [okt [LC _]]].
     apply okt_push_inv in okt. destruct okt as [okt [_ WFA ]].
@@ -5911,11 +6251,11 @@ Proof.
     forwards*: wft_subst_tb WFA WFP.
     (*repeatition end*)
     rewrite~ concat_assoc.
-    rewrite map_concat in H4.
-    rewrite map_single in H4.
+    rewrite map_concat in H5.
+    rewrite map_single in H5.
     unsimpl_map_bind.
     rewrite (subst_te_open_ee_var).
-    rewrite~ concat_assoc in H4.
+    rewrite~ concat_assoc in H5.
   - pick_fresh y.
     apply typ_typeof with (L:=((((((((((((((L \u \{ Z}) \u fv_ee e) \u fv_ee e1) \u fv_ee e2) \u
         fv_te e) \u fv_te e1) \u fv_te e2) \u 
@@ -6038,6 +6378,17 @@ Proof.
     forwards* : IHTyp2.
 Qed.
 
+Lemma typing_abs_inhabited : forall PG G A0 B0 e A,
+  typing PG G (e_abs A0 B0 e) A ->
+  inhabited PG G B0.
+Proof.
+  introv Typ. remember (e_abs A0 B0 e) as abs.
+  induction Typ; try discriminate.
+  - apply* IHTyp.
+  - inverts Heqabs. auto.
+  - apply* IHTyp1.
+Qed.
+
 Lemma abs_typ_arrow_sub : forall PG G A0 B0 e A,
 typing PG G (e_abs A0 B0 e) A ->
 sub PG G (t_arrow A0 B0) A.
@@ -6046,9 +6397,17 @@ Proof.
     remember (e_abs A0 B0 e) as abs.
     induction Typ; try discriminate.
     - eapply sub_transitivity; eauto.
-    - inverts Heqabs. apply sub_refl; eauto. admit.
+    - inverts Heqabs.
+      pick_fresh y.
+      forwards* Ty: H2 y.
+      forwards*(OKP&OkY&_&WFB): typing_regular Ty.
+      apply okt_push_inv in OkY. destruct OkY as [OkG [_ WFA]].
+      rewrite <- (concat_empty_r (G & y ~: A0)) in WFB.
+      apply wft_strengthen in WFB.
+      rewrite concat_empty_r in WFB.
+      apply sub_refl; auto.
     - apply s_anda; auto.
-Admitted.
+Qed.
 
 Lemma abs_typ_all_sub : forall PG G e A B,
 typing PG G (e_tabs A e) B ->
@@ -6161,8 +6520,18 @@ Proof.
   - forwards* : inv_abs_sub H.
   - exists A1 A2. split.
     + exists L. auto.
-    + apply sub_refl; eauto. admit.
-Admitted.
+    + pick_fresh y.
+      match goal with
+      | Hb : forall x, x \notin _ -> typing _ _ _ _ |- _ =>
+          forwards* Ty: Hb y
+      end.
+      forwards*(OKP&OkY&_&WFB): typing_regular Ty.
+      apply okt_push_inv in OkY. destruct OkY as [OkG [_ WFA]].
+      rewrite <- (concat_empty_r (G & y ~: A1)) in WFB.
+      apply wft_strengthen in WFB.
+      rewrite concat_empty_r in WFB.
+      apply sub_refl; auto.
+Qed.
 
 Lemma inv_all : forall PG G e A A1 A2,
     typing PG G (e_tabs A e) (t_all A1 A2) ->
@@ -6284,13 +6653,38 @@ Proof.
     apply inv_int in Typ2. destruct Typ2.
     assert (SUB : sub PG E t_int (t_and A B)) by auto.
     eapply ord_sub_findsubtypes_not_empty with (A:=t_int); eauto; intros; discriminate.
-  - apply abs_typ_arrow_sub in Typ1.
+  - forwards* Inh: typing_abs_inhabited Typ1.
+    apply abs_typ_arrow_sub in Typ1.
     apply abs_typ_arrow_sub in Typ2.
     forwards* (r1&AR1): exists_arrowranges OK WFA.
     forwards* (r2&AR2): exists_arrowranges OK WFB.
     assert (ARs: ArrowRanges PG E A r1 /\ ArrowRanges PG E B r2) by auto.
     specialize (DisjAR r1 r2). apply DisjAR in ARs.
-    admit.
+    destruct Inh as [Rc [OrdRc SubRc]].
+    forwards*(OKPw&WFarrow&_&OkE): sub_regular Typ1.
+    inverts WFarrow.
+    assert (SubW: sub PG E (t_arrow t_top Rc) (t_arrow A0 B0))
+      by (apply s_arrow; [apply s_top; auto | exact SubRc]).
+    assert (SubWA: sub PG E (t_arrow t_top Rc) A).
+    { apply sub_transitivity with (B:=t_arrow A0 B0); auto. }
+    assert (SubWB: sub PG E (t_arrow t_top Rc) B).
+    { apply sub_transitivity with (B:=t_arrow A0 B0); auto. }
+    forwards*(OKP2&WFW&_&Ok2): sub_regular SubW.
+    inverts WFW.
+    match goal with
+    | Hrc : wft PG E Rc |- _ =>
+        forwards* (lC&RLC): exists_rangeleaves Ok2 Hrc
+    end.
+    forwards* S1: sub_arrow_ranges_subset SubWA RLC AR1.
+    forwards* S2: sub_arrow_ranges_subset SubWB RLC AR2.
+    forwards* NE: ord_rangeleaves_nonempty OrdRc RLC.
+    destruct lC as [|tw lC'].
+    + false.
+    + assert (IN: set_In tw (r1 `inter` r2)).
+      { apply set_inter_intro.
+        - apply S1. simpl. auto.
+        - apply S2. simpl. auto. }
+      rewrite ARs in IN. inverts IN.
   - apply inv_null in Typ1. destruct Typ1.
     apply inv_null in Typ2. destruct Typ2.
     assert (SUB : sub PG E t_unit (t_and A B)) by auto.
@@ -6321,7 +6715,7 @@ Proof.
     apply inv_P in Typ2. destruct Typ2.
     assert (SUB : sub PG E (t_prim P) (t_and A B)) by auto.
     eapply ord_sub_findsubtypes_not_empty with (A:=t_prim P); eauto; intros; discriminate.
-Admitted.
+Qed.
 
 (*******************************************************)
 (** findtype gives least type of an expressions **)
@@ -6374,33 +6768,188 @@ Proof.
     forwards* (r2&AR2): exists_arrowranges OK WFB.
     assert (ARs: ArrowRanges PG E A r1 /\ ArrowRanges PG E B r2) by auto.
     specialize (DisjAR r1 r2). apply DisjAR in ARs.
-    admit.
+    assert (OrdR := Ord).
+    inverts WFC.
+    match goal with
+    | Hrc : wft PG E t2 |- _ =>
+        forwards* (lC&RLC): exists_rangeleaves OK Hrc
+    end.
+    forwards* S1: sub_arrow_ranges_subset SubA RLC AR1.
+    forwards* S2: sub_arrow_ranges_subset SubB RLC AR2.
+    forwards* NE: ord_rangeleaves_nonempty OrdR RLC.
+    destruct lC as [|t lC'].
+    + false.
+    + assert (IN: set_In t (r1 `inter` r2)).
+      { apply set_inter_intro.
+        - apply S1. simpl. auto.
+        - apply S2. simpl. auto. }
+      rewrite ARs in IN. inverts IN.
   - eapply ord_sub_findsubtypes_not_empty with (A:=t_unit); eauto; intros; discriminate.
   - eapply ord_sub_findsubtypes_not_empty with (A:=t_all t1 t2); eauto; intros; discriminate.
-  - eapply ord_sub_findsubtypes_not_empty with (A:=t_prim i); eauto; intros; discriminate.
-Admitted.
+  -     eapply ord_sub_findsubtypes_not_empty with (A:=t_prim i); eauto; intros; discriminate.
+Qed.
 
 (********************************************)
 (** Values have ordinary types **)
 
 Lemma findtype_ord_type : forall v A,
   findtype v A ->
-  Ord A.
+  (exists A1 A2, A = t_arrow A1 A2) \/ Ord A.
 Proof.
-  introv Find.
-  inverts Find; try constructor.
-  admit.
-Admitted.
+  introv Find. inversion Find; subst.
+  - right. exact o_int.
+  - left. eexists. eexists. reflexivity.
+  - right. exact o_unit.
+  - right. apply o_all.
+  - right. exact (o_prim P).
+Qed.
+
+Lemma tag_not_both : forall PG E v A B C,
+  PG; E |= A *a B ->
+  typing PG E v (t_union A B) ->
+  findtype v C ->
+  sub PG E C A ->
+  sub PG E C B ->
+  False.
+Proof.
+  introv Disj TypV Find SubA SubB.
+  destruct (findtype_ord_type _ _ Find) as [[A1 [A2 Eq]]|OrdC].
+  - subst C. inversion Find; subst.
+    forwards* Inh: typing_abs_inhabited TypV.
+    destruct Inh as [Rc [OrdRc SubRc]].
+    forwards*(OKP&WFarrow&_&OkE): sub_regular SubA.
+    inverts WFarrow.
+    assert (SubW: sub PG E (t_arrow t_top Rc) (t_arrow A1 A2))
+      by (apply s_arrow; [apply s_top; auto | exact SubRc]).
+    eapply sub_ord_disjoint_types.
+    + exact Disj.
+    + apply o_arrow. exact OrdRc.
+    + eapply sub_transitivity; [exact SubW | exact SubA].
+    + eapply sub_transitivity; [exact SubW | exact SubB].
+  - eapply sub_ord_disjoint_types; eauto.
+Qed.
 
 (**************************************)
 (****  Type Preservation Theorem  *****)
 (**************************************)
 
+Lemma sub_arrow_inv : forall PG G A1 A2 B1 B2,
+  sub PG G (t_arrow A1 A2) (t_arrow B1 B2) ->
+  sub PG G B1 A1 /\ sub PG G A2 B2.
+Proof.
+  introv Sub. inverts Sub. auto.
+Qed.
+
+Lemma sub_all_inv : forall PG G S1 S2 T1 T2,
+  sub PG G (t_all S1 S2) (t_all T1 T2) ->
+  sub PG G S1 T1 /\
+  (exists L, forall X, X \notin L ->
+     sub PG (G & X ~*: T1) (S2 open_tt_var X) (T2 open_tt_var X)).
+Proof.
+  introv Sub. inverts Sub. split; auto. exists* L.
+Qed.
+
 Lemma preservation : forall PG E e e' T,
   typing PG E e T ->
   step PG E e e' ->
   typing PG E e' T.
-Admitted.
+Proof.
+  introv Typ. gen e'.
+  induction Typ; introv Red.
+  - inverts Red.
+  - inverts Red.
+  - inverts Red.
+  - inverts Red.
+    + eapply typ_app; eauto.
+    + eapply typ_app; eauto.
+    + forwards* (B1&B2&Hex&SubAB): inv_arrow Typ1.
+      destruct Hex as [L Body].
+      forwards* (SubDom&SubRng): sub_arrow_inv SubAB.
+      pick_fresh x.
+      forwards* TyBody: Body x.
+      match type of Typ2 with
+      | typing ?P ?G0 ?arg _ =>
+          assert (TypArg: typing P G0 arg B1) by applys typ_sub Typ2 SubDom;
+          rewrite <- (concat_empty_r (G & x ~: B1)) in TyBody;
+          forwards* TyOpen: typing_through_subst_ee TyBody TypArg;
+          rewrite concat_empty_r in TyOpen;
+          match type of TyOpen with
+          | typing _ _ (subst_ee _ _ (?body open_ee_var _)) _ =>
+              forwards* EqOpen: (@subst_ee_intro x arg body);
+              rewrite <- EqOpen in TyOpen
+          end;
+          applys typ_sub TyOpen SubRng
+      end.
+  - eapply typ_sub; eauto.
+  - inverts Red.
+  - inverts Red.
+    + apply* typ_typeof.
+    + forwards DisjOr: check_or_typ H11 Typ.
+      destruct DisjOr as [TypA|TypB].
+      * pick_fresh y.
+        forwards* TyBr: H y.
+        rewrite <- (concat_empty_r (G & y ~: A)) in TyBr.
+        forwards* TyOpen: typing_through_subst_ee TyBr TypA.
+        rewrite concat_empty_r in TyOpen.
+        match type of TyOpen with
+        | typing _ _ (subst_ee _ _ (?body open_ee_var _)) _ =>
+            forwards* EqOpen: (@subst_ee_intro y e body);
+            rewrite <- EqOpen in TyOpen
+        end.
+        exact TyOpen.
+      * forwards* SubB: check_find_type TypB H12.
+        exfalso. applys tag_not_both H3 Typ H12 H13 SubB.
+    + forwards DisjOr: check_or_typ H11 Typ.
+      destruct DisjOr as [TypA|TypB].
+      * forwards* SubA: check_find_type TypA H12.
+        exfalso. applys tag_not_both H3 Typ H12 SubA H13.
+      * pick_fresh y.
+        forwards* TyBr: H1 y.
+        rewrite <- (concat_empty_r (G & y ~: B)) in TyBr.
+        forwards* TyOpen: typing_through_subst_ee TyBr TypB.
+        rewrite concat_empty_r in TyOpen.
+        match type of TyOpen with
+        | typing _ _ (subst_ee _ _ (?body open_ee_var _)) _ =>
+            forwards* EqOpen: (@subst_ee_intro y e body);
+            rewrite <- EqOpen in TyOpen
+        end.
+        exact TyOpen.
+  - apply typ_inter; auto.
+  - inverts Red.
+  - inverts Red.
+    + apply* typ_tapp.
+    + forwards* (D1&D2&Hex&SubAll): inv_all Typ.
+      destruct Hex as [L Body].
+      forwards* (SubBd&HexB): sub_all_inv SubAll.
+      destruct HexB as [L2 BodSub].
+      pick_fresh X.
+      forwards* TyBody: Body X.
+      forwards* SubBody: BodSub X.
+      rewrite <- (concat_empty_r (G & X ~*: B)) in TyBody.
+      assert (OkM: okt PG (G & map (subst_tb X A) empty)).
+      { rewrite map_empty. rewrite concat_empty_r.
+        forwards*(?&OkG&_&_): typing_regular Typ. }
+      forwards* TyOpen: (>> typing_through_subst_te TyBody H0 H OkM).
+      rewrite map_empty in TyOpen. rewrite concat_empty_r in TyOpen.
+      match type of TyOpen with
+      | typing _ _ (subst_te _ _ (?body open_te_var _)) (subst_tt _ _ (?tbody open_tt_var _)) =>
+          forwards* EqTe: (@subst_te_intro X A body);
+          rewrite <- EqTe in TyOpen;
+          forwards* EqTt: (@subst_tt_intro X tbody A);
+          rewrite <- EqTt in TyOpen
+      end.
+      rewrite <- (concat_empty_r (G & X ~*: B)) in SubBody.
+      forwards* SubOpen: (>> sub_through_subst_tt SubBody H OkM).
+      rewrite map_empty in SubOpen. rewrite concat_empty_r in SubOpen.
+      match type of SubOpen with
+      | sub _ _ (subst_tt _ _ (?sbody open_tt_var _)) (subst_tt _ _ (?tbody open_tt_var _)) =>
+          forwards* EqS: (@subst_tt_intro X sbody A);
+          rewrite <- EqS in SubOpen;
+          forwards* EqT: (@subst_tt_intro X tbody A);
+          rewrite <- EqT in SubOpen
+      end.
+      applys typ_sub TyOpen SubOpen.
+Qed.
 
 
 (*********************************)
@@ -6409,7 +6958,148 @@ Admitted.
 
 Lemma progress : forall PG e T,
 typing PG empty e T -> (value e) \/ (exists e', step PG empty e e').
-Admitted.
+Proof.
+  introv Typ. gen_eq E: (@empty bind). lets Typ': Typ.
+  inductions Typ; intros EQ; subst.
+  - left*.
+  - left*.
+  - apply binds_empty_inv in H1. inverts H1.
+  - right. destruct* IHTyp1.
+    + destruct* IHTyp2.
+      * match goal with
+        | Hv : value e1 |- _ => inverts Hv
+        end.
+        { apply inv_int in Typ1. destruct Typ1 as [_ Sub]. inverts Sub. }
+        { match goal with
+          | _ : lc_exp (e_abs ?Da ?Db ?body) |- _ =>
+              exists (open_ee body e2); apply* step_beta
+          end. }
+        { apply inv_null in Typ1. destruct Typ1 as [_ Sub]. inverts Sub. }
+        { apply abs_typ_all_sub in Typ1. destruct Typ1 as [A1 [B1 Sub]].
+          inverts Sub. }
+        { apply inv_P in Typ1. destruct Typ1 as [_ Sub]. inverts Sub. }
+      * match goal with
+        | Hex : exists _ : exp, step _ _ e2 _ |- _ => destruct Hex as [e2' St]
+        end.
+        exists (e_app e1 e2'). apply* step_appr.
+    + match goal with
+      | Hex : exists _ : exp, step _ _ e1 _ |- _ => destruct Hex as [e1' St]
+      end.
+      exists (e_app e1' e2). apply* step_appl.
+      forwards*(?&?&LC&?): typing_regular Typ2.
+  - destruct* IHTyp.
+  - left. forwards*(?&?&LC&?): typing_regular Typ'.
+  - right. destruct* IHTyp.
+    + apply check_or_typ in Typ; auto.
+      destruct Typ as [TypA|TypB].
+      * match goal with
+        | Hv : value e |- _ => inverts Hv
+        end.
+        { apply inv_int in TypA. destruct TypA as [_ Sub].
+          exists (open_ee e1 (e_lit i5)).
+          eapply step_typeofl with (C:=t_int); eauto.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply abs_typ_arrow_sub in TypA.
+          match goal with
+          | _ : lc_exp (e_abs ?Da ?Db ?body) |- _ =>
+              exists (open_ee e1 (e_abs Da Db body));
+              eapply step_typeofl with (C:=t_arrow Da Db); eauto
+          end.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply inv_null in TypA. destruct TypA as [_ Sub].
+          exists (open_ee e1 e_null).
+          eapply step_typeofl with (C:=t_unit); eauto.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply abs_typ_all_sub in TypA. destruct TypA as [A1 [B1 Sub]].
+          match goal with
+          | _ : lc_exp (e_tabs ?Tb ?body) |- _ =>
+              exists (open_ee e1 (e_tabs Tb body));
+              eapply step_typeofl with (C:=t_all t_bot t_bot)
+          end.
+          - eauto.
+          - forwards*(OKP&WFall&_&OkE): sub_regular Sub.
+            inverts WFall.
+            apply sub_transitivity with (B:=t_all A1 B1).
+            + pick_fresh Y.
+              apply s_all with (L:=dom empty); intros; auto.
+              * apply* bot_sub_all.
+              * apply* bot_sub_all.
+            + exact Sub.
+          - forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply inv_P in TypA. destruct TypA as [_ Sub].
+          exists (open_ee e1 (e_new P)).
+          eapply step_typeofl with (C:=t_prim P); eauto.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+      * match goal with
+        | Hv : value e |- _ => inverts Hv
+        end.
+        { apply inv_int in TypB. destruct TypB as [_ Sub].
+          exists (open_ee e2 (e_lit i5)).
+          eapply step_typeofr with (C:=t_int); eauto.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply abs_typ_arrow_sub in TypB.
+          match goal with
+          | _ : lc_exp (e_abs ?Da ?Db ?body) |- _ =>
+              exists (open_ee e2 (e_abs Da Db body));
+              eapply step_typeofr with (C:=t_arrow Da Db); eauto
+          end.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply inv_null in TypB. destruct TypB as [_ Sub].
+          exists (open_ee e2 e_null).
+          eapply step_typeofr with (C:=t_unit); eauto.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply abs_typ_all_sub in TypB. destruct TypB as [A1 [B1 Sub]].
+          match goal with
+          | _ : lc_exp (e_tabs ?Tb ?body) |- _ =>
+              exists (open_ee e2 (e_tabs Tb body));
+              eapply step_typeofr with (C:=t_all t_bot t_bot)
+          end.
+          - eauto.
+          - forwards*(OKP&WFall&_&OkE): sub_regular Sub.
+            inverts WFall.
+            apply sub_transitivity with (B:=t_all A1 B1).
+            + pick_fresh Y.
+              apply s_all with (L:=dom empty); intros; auto.
+              * apply* bot_sub_all.
+              * apply* bot_sub_all.
+            + exact Sub.
+          - forwards*(?&?&LC&?): typing_regular Typ'. }
+        { apply inv_P in TypB. destruct TypB as [_ Sub].
+          exists (open_ee e2 (e_new P)).
+          eapply step_typeofr with (C:=t_prim P); eauto.
+          forwards*(?&?&LC&?): typing_regular Typ'. }
+    + match goal with
+      | Hex : exists _ : exp, step _ _ e _ |- _ => destruct Hex as [e' St]
+      end.
+      exists (e_typeof e' A e1 B e2). apply* step_typeof.
+      forwards*(?&?&LC&?): typing_regular Typ'.
+  - destruct* IHTyp1.
+  - left. forwards*(?&?&LC&?): typing_regular Typ'.
+  - right. destruct* IHTyp.
+    + match goal with
+      | Hv : value e |- _ => inverts Hv
+      end.
+      { apply inv_int in Typ. destruct Typ as [_ Sub].
+        forwards*(?&?&?&WF): sub_regular Sub. inverts WF. }
+      { apply abs_typ_arrow_sub in Typ.
+        forwards*(?&?&?&WF): sub_regular Typ. inverts WF. }
+      { apply inv_null in Typ. destruct Typ as [_ Sub].
+        forwards*(?&?&?&WF): sub_regular Sub. inverts WF. }
+      { match goal with
+        | _ : lc_exp (e_tabs ?Tb ?body) |- _ =>
+            exists (open_te body A); apply* step_tabs
+        end.
+        forwards*(?&?&WFA&_): disj_regular H.
+        apply* type_from_wft. }
+      { apply inv_P in Typ. destruct Typ as [_ Sub].
+        forwards*(?&?&?&WF): sub_regular Sub. inverts WF. }
+    + match goal with
+      | Hex : exists _ : exp, step _ _ e _ |- _ => destruct Hex as [e' St]
+      end.
+      exists (e_tapp e' A). apply* step_tapp.
+      forwards*(?&?&WFA&_): disj_regular H.
+      apply* type_from_wft.
+Qed.
 
 
 (****************************************************)
@@ -6478,7 +7168,45 @@ Qed.
 (*****  Determinism Theorem  *****)
 (*********************************)
 
-Lemma determinism : forall PG E e e1 e2 A, 
+Lemma determinism : forall PG E e e1 e2 A,
   typing PG E e A ->
   step PG E e e1 -> step PG E e e2 -> e1 = e2.
-Admitted.
+Proof.
+  introv Typ He1. gen e2 A.
+  induction He1; introv Typ He2.
+  - inverts He2.
+    + apply inv_app in Typ. destruct Typ as [A1 [B1 [Ty1 _]]].
+      forwards* Eq: IHHe1 Ty1. subst. auto.
+    + inverts H1; inverts He1.
+    + inverts He1.
+  - inverts He2.
+    + inverts H; inverts H3.
+    + apply inv_app in Typ. destruct Typ as [A1 [B1 [_ Ty2]]].
+      forwards* Eq: IHHe1 Ty2. subst. auto.
+    + inverts H3; inverts He1.
+  - inverts He2.
+    + inverts H4.
+    + inverts H0; inverts H4.
+  - inverts He2.
+    + apply inv_typeof in Typ. destruct Typ as [D [Ty _]].
+      forwards* Eq: IHHe1 Ty. subst. auto.
+    + inverts H7; inverts He1.
+    + inverts H7; inverts He1.
+  - inverts He2.
+    + inverts H0; inverts H9.
+    + apply inv_typeof in Typ. destruct Typ as [D [Ty Disj]].
+      forwards* EqT: findtype_unique H1 H10. subst.
+      exfalso. apply tag_not_both with (v:=v) (C:=C0); auto.
+  - inverts He2.
+    + inverts H0; inverts H9.
+    + apply inv_typeof in Typ. destruct Typ as [D [Ty Disj]].
+      forwards* EqT: findtype_unique H1 H10. subst.
+      exfalso. apply tag_not_both with (v:=v) (C:=C0); auto.
+  - inverts He2.
+    + apply inv_tapp in Typ. destruct Typ as [A1 [A2 Ty]].
+      forwards* Eq: IHHe1 Ty. subst. auto.
+    + inverts H1; inverts He1.
+  - inverts He2.
+    + inverts H2.
+    + inverts H; inverts H2.
+Qed.

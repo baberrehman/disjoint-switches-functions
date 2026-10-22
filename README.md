@@ -21,21 +21,23 @@ access the artifact and look into the directory hierarchy.
 
 ### Code Structure:
 
-There are 4 sub-folders in the artifact in *code* folder:
+There are 5 sub-folders in the artifact in *code* folder:
 1) section3
-2) section4
-3) section51
-4) section52
+2) section3_domain
+3) section4
+4) section51
+5) section52
 
 Each folder contains Coq formalization for a variant of our calculus discussed in paper.
 Organization of folders is:
 
-|  Folder    |   System                                     | Reference in paper       |
-| :--------- | :------------------------------------------- | :----------------------- |
-| section3   | Union calculus                               | Discussed in section 3   |
-| section4   | Union calculus with various advance features | Discussed in section 4   |
-| section51  | An extension with parametric polymorphism    | Discussed in section 5.1 |
-| section52  | An extension with generalized subtyping      | Discussed in section 5.2 |
+|  Folder          |   System                                     | Reference in paper       |
+| :--------------- | :------------------------------------------- | :----------------------- |
+| section3         | Union calculus                               | Discussed in section 3   |
+| section3_domain  | Section 3 + domain-based function disjointness | Extension of section 3 |
+| section4         | Union calculus with various advance features | Discussed in section 4   |
+| section51        | An extension with parametric polymorphism    | Discussed in section 5.1 |
+| section52        | An extension with generalized subtyping      | Discussed in section 5.2 |
 
 **Note:** Note that section 5 in extended version of the paper
 corresponds to appendix A in ECOOP 2022 publication.
@@ -57,6 +59,27 @@ reference in *section 3* in the paper:
 | Theorem 10       | typing.v     | determinism                          |
 | Lemma 12         | syntax.v     | dropped: *s ⇔ *s1 no longer holds    |
 | ad_arrow (new)   | syntax.v     | B1 *a B2 ⇒ (A1→B1) *a (A2→B2)     |
+
+
+#### section3_domain
+Section 3 plus `ad_arrow_dom`: disjoint domains imply disjoint function types.
+`*s2` is sound and complete for the algorithm (`*a ⇔ *s2`): arrows overlap
+iff domains and ranges both overlap, and inhabitation of `A→B` follows the
+range only. `typeof` uses `*s2`. A value can still inhabit both branches
+(`⊤→Int` subtypes both `Int→Int` and `Unit→Int`), so the right branch steps
+only when the runtime tag is not a subtype of the left.
+
+|  Lemma                 |   Coq file   |     Lemma(s) in Coq File             |
+| :--------------------- | :----------- | :----------------------------------- |
+| ad_arrow_dom (new)     | syntax.v     | A1 *a A2 ⇒ (A1→B1) *a (A2→B2)     |
+| DisjSpec2 / *s2        | syntax.v     | domain+range overlap; *a ⇔ *s2     |
+| Disj_equiv2            | syntax.v     | *a ⇔ *s2 (sound + complete)        |
+| sub_dec                | syntax.v     | subtyping is decidable               |
+| arrow_dom_unsound      | syntax.v     | domain rule is not *s1-sound         |
+| s2_common_value        | typing.v     | one value can inhabit both *s2 branches |
+| step_typeofr           | typing.v     | right branch only if tag not <: left |
+| Disj_completeness      | syntax.v     | *s1 ⇒ *a still holds               |
+| Theorem 7 / 8 / 10     | typing.v     | preservation / progress / determinism |
 
 
 #### section4
@@ -193,6 +216,11 @@ Go to each folder and run make:
 ### section3
 
 1. `$ cd /home/coq/code/section3`
+2. `$ make`
+
+### section3_domain
+
+1. `$ cd /home/coq/code/section3_domain`
 2. `$ make`
 
 ### section4

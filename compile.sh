@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compile all four Coq developments (Coq 8.13.1 + TLC + Metalib).
+# Compile all Coq developments (Coq 8.13 + TLC + Metalib).
 # Prefers the artifact Docker image when the daemon is available.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -20,6 +20,7 @@ compile_dir() {
 }
 
 compile_dir section3
+compile_dir section3_domain
 compile_dir section4
 compile_dir section51
 compile_dir section52

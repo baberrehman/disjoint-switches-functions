@@ -406,6 +406,43 @@ Inductive OSubtypes (PG:envp) (E:env) : typ -> list typ -> Prop :=
 #[export]
 Hint Constructors OSubtypes : core.
 
+(* Ordinary leaves of a type, peeling arrows. Unlike OSubtypes, an
+   arrow contributes the leaves of its range, so nested arrows still
+   overlap on Int/Unit/prims. A type variable is treated as possibly
+   any ordinary leaf: instantiations are types disjoint from the bound,
+   and those instantiations can carry any ordinary range. *)
+Inductive RangeLeaves (PG:envp) (E:env) : typ -> list typ -> Prop :=
+  | rl_top :
+      RangeLeaves PG E t_top (all_ord PG)
+  | rl_bot :
+      RangeLeaves PG E t_bot []
+  | rl_int :
+      RangeLeaves PG E t_int [t_int]
+  | rl_arrow : forall A B l,
+      RangeLeaves PG E B l ->
+      RangeLeaves PG E (t_arrow A B) l
+  | rl_union : forall A B l1 l2,
+      RangeLeaves PG E A l1 ->
+      RangeLeaves PG E B l2 ->
+      RangeLeaves PG E (t_union A B) (l1 `union` l2)
+  | rl_inter : forall A B l1 l2,
+      RangeLeaves PG E A l1 ->
+      RangeLeaves PG E B l2 ->
+      RangeLeaves PG E (t_and A B) (l1 `inter` l2)
+  | rl_unit :
+      RangeLeaves PG E t_unit [t_unit]
+  | rl_fvar : forall X T,
+      binds X (bind_disj T) E ->
+      RangeLeaves PG E (t_fvar X) (all_ord PG)
+  | rl_all : forall A B,
+      RangeLeaves PG E (t_all A B) [t_all t_bot t_bot]
+  | rl_prim : forall i,
+      RangeLeaves PG E (t_prim i) ([t_prim i] ++
+      nats_to_types (get_all_subtypes PG (t_prim i))).
+
+#[export]
+Hint Constructors RangeLeaves : core.
+
 (* Ordinary ranges of function subtypes. Two arrows are disjoint
    iff these sets do not overlap (range rule). *)
 Inductive ArrowRanges (PG:envp) (E:env) : typ -> list typ -> Prop :=
@@ -419,8 +456,9 @@ Inductive ArrowRanges (PG:envp) (E:env) : typ -> list typ -> Prop :=
       ArrowRanges PG E t_unit []
   | ar_prim : forall i,
       ArrowRanges PG E (t_prim i) []
-  | ar_arrow : forall A B,
-      ArrowRanges PG E (t_arrow A B) [B]
+  | ar_arrow : forall A B l,
+      RangeLeaves PG E B l ->
+      ArrowRanges PG E (t_arrow A B) l
   | ar_union : forall A B l1 l2,
       ArrowRanges PG E A l1 ->
       ArrowRanges PG E B l2 ->
@@ -429,10 +467,9 @@ Inductive ArrowRanges (PG:envp) (E:env) : typ -> list typ -> Prop :=
       ArrowRanges PG E A l1 ->
       ArrowRanges PG E B l2 ->
       ArrowRanges PG E (t_and A B) (l1 `inter` l2)
-  | ar_fvar : forall X T l,
+  | ar_fvar : forall X T,
       binds X (bind_disj T) E ->
-      ArrowRanges PG E T l ->
-      ArrowRanges PG E (t_fvar X) l
+      ArrowRanges PG E (t_fvar X) (all_ord PG)
   | ar_all : forall A B,
       ArrowRanges PG E (t_all A B) [].
 
@@ -529,6 +566,12 @@ Inductive Ord : typ -> Prop :=
 
 #[export]
 Hint Constructors Ord : core.
+
+(* An ordinary witness that a type is inhabited. Abstraction requires
+   this of the declared range, as in section 3, so a value arrow cannot
+   sit in two disjoint branches via a bottom range. *)
+Definition inhabited (PG:envp) (E:env) (A:typ) :=
+  exists C, Ord C /\ sub PG E C A.
 
 (***********************************)
 (****  FindSubtypes Properties  ****)
@@ -1012,13 +1055,24 @@ Proof.
   forwards* (l&osubu): exists_osubtypes_ground GU.
 Qed.
 
-Lemma exists_arrowranges_ground : forall PG E A,
-  groundtype A ->
-  exists l, ArrowRanges PG E A l.
+Lemma exists_rangeleaves : forall PG E A,
+  okt PG E ->
+  wft PG E A ->
+  exists l, RangeLeaves PG E A l.
 Proof.
-  introv GT. inductions GT; try solve [exists*].
-  - destruct~ IHGT1 as [l1]. destruct~ IHGT2 as [l2]. exists*.
-  - destruct~ IHGT1 as [l1]. destruct~ IHGT2 as [l2]. exists*.
+  introv OK WFT. induction WFT.
+  - exists (all_ord PG). constructor.
+  - exists [t_int]. constructor.
+  - exists (@nil typ). constructor.
+  - destruct IHWFT2 as [l2]; auto. exists l2. constructor; auto.
+  - destruct IHWFT1 as [l1]; auto. destruct IHWFT2 as [l2]; auto.
+    exists (l1 `union` l2). constructor; auto.
+  - destruct IHWFT1 as [l1]; auto. destruct IHWFT2 as [l2]; auto.
+    exists (l1 `inter` l2). constructor; auto.
+  - exists (all_ord PG). apply rl_fvar with (T:=U); auto.
+  - exists [t_all t_bot t_bot]. constructor.
+  - exists [t_unit]. constructor.
+  - exists ([t_prim i] ++ nats_to_types (get_all_subtypes PG (t_prim i))). constructor.
 Qed.
 
 Lemma exists_arrowranges : forall PG E A,
@@ -1030,17 +1084,28 @@ Proof.
   - exists (all_ord PG). constructor.
   - exists (@nil typ). constructor.
   - exists (@nil typ). constructor.
-  - exists (T2 :: nil). constructor.
+  - match goal with
+    | Hw : wft PG E T2 |- _ =>
+        forwards* (l&RL): exists_rangeleaves OK Hw;
+        exists l; constructor; exact RL
+    end.
   - destruct IHWFT1 as [l1]; auto. destruct IHWFT2 as [l2]; auto.
     exists (l1 `union` l2). constructor; auto.
   - destruct IHWFT1 as [l1]; auto. destruct IHWFT2 as [l2]; auto.
     exists (l1 `inter` l2). constructor; auto.
-  - forwards* GU: okt_binds_ground H.
-    destruct (exists_arrowranges_ground PG E U GU) as [l AR].
-    exists l. apply ar_fvar with (T:=U); auto.
+  - exists (all_ord PG). apply ar_fvar with (T:=U); auto.
   - exists (@nil typ). constructor.
   - exists (@nil typ). constructor.
   - exists (@nil typ). constructor.
+Qed.
+
+Lemma exists_arrowranges_ground : forall PG E A,
+  okt PG E ->
+  wft PG E A ->
+  groundtype A ->
+  exists l, ArrowRanges PG E A l.
+Proof.
+  intros. apply* exists_arrowranges.
 Qed.
 
 (* Regularity of disjointness *)
