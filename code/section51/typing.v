@@ -7016,16 +7016,15 @@ Proof.
               exists (open_ee e1 (e_tabs Tb body));
               eapply step_typeofl with (C:=t_all t_bot t_bot)
           end.
-          - eauto.
-          - forwards*(OKP&WFall&_&OkE): sub_regular Sub.
+          - forwards*(?&?&LC&?): typing_regular Typ'.
+          - auto.
+          - auto.
+          - forwards (OKP&WFall&_&OkE): sub_regular Sub.
             inverts WFall.
             apply sub_transitivity with (B:=t_all A1 B1).
-            + pick_fresh Y.
-              apply s_all with (L:=dom empty); intros; auto.
-              * apply* bot_sub_all.
-              * apply* bot_sub_all.
+            + apply s_all with (L:=L0); intros; auto.
             + exact Sub.
-          - forwards*(?&?&LC&?): typing_regular Typ'. }
+          }
         { apply inv_P in TypA. destruct TypA as [_ Sub].
           exists (open_ee e1 (e_new P)).
           eapply step_typeofl with (C:=t_prim P); eauto.
@@ -7054,16 +7053,15 @@ Proof.
               exists (open_ee e2 (e_tabs Tb body));
               eapply step_typeofr with (C:=t_all t_bot t_bot)
           end.
-          - eauto.
-          - forwards*(OKP&WFall&_&OkE): sub_regular Sub.
+              - forwards*(?&?&LC&?): typing_regular Typ'.
+              - auto.
+              - auto.
+          - forwards (OKP&WFall&_&OkE): sub_regular Sub.
             inverts WFall.
             apply sub_transitivity with (B:=t_all A1 B1).
-            + pick_fresh Y.
-              apply s_all with (L:=dom empty); intros; auto.
-              * apply* bot_sub_all.
-              * apply* bot_sub_all.
+            + apply s_all with (L:=L0); intros; auto.
             + exact Sub.
-          - forwards*(?&?&LC&?): typing_regular Typ'. }
+          }
         { apply inv_P in TypB. destruct TypB as [_ Sub].
           exists (open_ee e2 (e_new P)).
           eapply step_typeofr with (C:=t_prim P); eauto.
@@ -7080,11 +7078,11 @@ Proof.
       | Hv : value e |- _ => inverts Hv
       end.
       { apply inv_int in Typ. destruct Typ as [_ Sub].
-        forwards*(?&?&?&WF): sub_regular Sub. inverts WF. }
+        inverts Sub. }
       { apply abs_typ_arrow_sub in Typ.
-        forwards*(?&?&?&WF): sub_regular Typ. inverts WF. }
+        inverts Typ. }
       { apply inv_null in Typ. destruct Typ as [_ Sub].
-        forwards*(?&?&?&WF): sub_regular Sub. inverts WF. }
+        inverts Sub. }
       { match goal with
         | _ : lc_exp (e_tabs ?Tb ?body) |- _ =>
             exists (open_te body A); apply* step_tabs
@@ -7092,7 +7090,7 @@ Proof.
         forwards*(?&?&WFA&_): disj_regular H.
         apply* type_from_wft. }
       { apply inv_P in Typ. destruct Typ as [_ Sub].
-        forwards*(?&?&?&WF): sub_regular Sub. inverts WF. }
+        inverts Sub. }
     + match goal with
       | Hex : exists _ : exp, step _ _ e _ |- _ => destruct Hex as [e' St]
       end.
@@ -7119,13 +7117,13 @@ Qed.
 
 Lemma inv_typeof : forall PG E e e1 e2 A B C,
 typing PG E (e_typeof e A e1 B e2) C ->
-exists D, typing PG E e D /\ PG; E |= A *a B.
+typing PG E e (t_union A B) /\ PG; E |= A *a B.
 Proof.
   introv Typ.
   inductions Typ.
   - specialize (IHTyp e e1 e2 A B).
     forwards* : IHTyp.
-  - exists* (t_union A B).
+  - split*.
   - forwards* : IHTyp1.
 Qed.
 
@@ -7173,40 +7171,34 @@ Lemma determinism : forall PG E e e1 e2 A,
   step PG E e e1 -> step PG E e e2 -> e1 = e2.
 Proof.
   introv Typ He1. gen e2 A.
-  induction He1; introv Typ He2.
-  - inverts He2.
-    + apply inv_app in Typ. destruct Typ as [A1 [B1 [Ty1 _]]].
-      forwards* Eq: IHHe1 Ty1. subst. auto.
-    + inverts H1; inverts He1.
-    + inverts He1.
-  - inverts He2.
-    + inverts H; inverts H3.
-    + apply inv_app in Typ. destruct Typ as [A1 [B1 [_ Ty2]]].
-      forwards* Eq: IHHe1 Ty2. subst. auto.
-    + inverts H3; inverts He1.
-  - inverts He2.
-    + inverts H4.
-    + inverts H0; inverts H4.
-  - inverts He2.
-    + apply inv_typeof in Typ. destruct Typ as [D [Ty _]].
-      forwards* Eq: IHHe1 Ty. subst. auto.
-    + inverts H7; inverts He1.
-    + inverts H7; inverts He1.
-  - inverts He2.
-    + inverts H0; inverts H9.
-    + apply inv_typeof in Typ. destruct Typ as [D [Ty Disj]].
-      forwards* EqT: findtype_unique H1 H10. subst.
-      exfalso. apply tag_not_both with (v:=v) (C:=C0); auto.
-  - inverts He2.
-    + inverts H0; inverts H9.
-    + apply inv_typeof in Typ. destruct Typ as [D [Ty Disj]].
-      forwards* EqT: findtype_unique H1 H10. subst.
-      exfalso. apply tag_not_both with (v:=v) (C:=C0); auto.
-  - inverts He2.
-    + apply inv_tapp in Typ. destruct Typ as [A1 [A2 Ty]].
-      forwards* Eq: IHHe1 Ty. subst. auto.
-    + inverts H1; inverts He1.
-  - inverts He2.
-    + inverts H2.
-    + inverts H; inverts H2.
+  induction He1; introv Typ He2; inverts He2;
+    try reflexivity;
+    try solve [match goal with
+    | V : value ?v, St : step _ _ ?v _ |- _ =>
+        exfalso; exact (value_not_step _ _ _ _ V St)
+    end];
+    try solve [match goal with
+    | St : step _ _ (e_abs _ _ _) _ |- _ => inversion St
+    | St : step _ _ (e_tabs _ _) _ |- _ => inversion St
+    end].
+  - apply inv_app in Typ. destruct Typ as [A1 [B1 [Ty1 _]]].
+    forwards* Eq: IHHe1 Ty1. subst. auto.
+  - apply inv_app in Typ. destruct Typ as [A1 [B1 [_ Ty2]]].
+    forwards* Eq: IHHe1 Ty2. subst. auto.
+  - apply inv_typeof in Typ. destruct Typ as [Ty Disj].
+    forwards* Eq: IHHe1 Ty. subst. auto.
+  - apply inv_typeof in Typ. destruct Typ as [Ty Disj].
+    match goal with
+    | F1 : findtype ?v ?T1, F2 : findtype ?v ?T2 |- _ =>
+        forwards EqT: findtype_unique F1 F2; subst T2
+    end.
+    exfalso. eapply tag_not_both; eauto.
+  - apply inv_typeof in Typ. destruct Typ as [Ty Disj].
+    match goal with
+    | F1 : findtype ?v ?T1, F2 : findtype ?v ?T2 |- _ =>
+        forwards EqT: findtype_unique F1 F2; subst T2
+    end.
+    exfalso. eapply tag_not_both; eauto.
+  - apply inv_tapp in Typ. destruct Typ as [A1 [A2 Ty]].
+    forwards* Eq: IHHe1 Ty. subst. auto.
 Qed.

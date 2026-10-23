@@ -369,8 +369,6 @@ Lemma typing_through_subst_ee : forall PG E F x T e u U,
    typing PG E u U ->
    typing PG (E & F) (subst_exp u x e) T.
 Proof.
-Admitted.
-(*
 introv TypT TypU.
 lets TypT': TypT.
 inductions TypT; introv; simpl.
@@ -395,33 +393,28 @@ inductions TypT; introv; simpl.
  - eapply typ_abs with (L:=((((L \u \{ x}) \u fv_exp u) \u fv_exp e) \u dom E) \u dom F); intros; auto.
    assert (x0 \notin L) by auto.
    rewrite~ subst_ee_open_ee_var.
-   lets TEMP1: H4 x0 H5 E (F & x0 ~: A) x.
-   lets TEMP2: TEMP1 U.
-   forwards~ : (TEMP1); try solve [rewrite~ concat_assoc]. auto.
-   rewrite~ <- concat_assoc.
-   apply typing_regular in TypU. destruct TypU. destruct~ H7.
+  rewrite <- concat_assoc.
+  eapply H4; eauto; rewrite~ concat_assoc.
+  forwards* (?&?&?): typing_regular TypU.
 (*case typeof*)
  - eapply typ_typeof with (L:=((((((L \u \{ x}) \u fv_exp u) \u fv_exp e) \u fv_exp e1) \u fv_exp e2) \u
    dom E) \u dom F); intros; auto. eapply IHTypT; auto.
   + assert (x0 \notin L) by auto.
     rewrite~ subst_ee_open_ee_var.
-    lets TEMP1: H4 x0 H9 E (F & x0 ~: A) x. lets TEMP2: TEMP1 U.
-    forwards~: TEMP2; try solve [rewrite~ concat_assoc].
-    rewrite~ <- concat_assoc.
-    apply typing_regular in TypU. destruct TypU as [OK [LC _]]. auto.
+    rewrite <- concat_assoc.
+    eapply H4; eauto; rewrite~ concat_assoc.
+    forwards* (?&?&?): typing_regular TypU.
   + assert (x0 \notin L) by auto.
     rewrite~  subst_ee_open_ee_var.
-    lets TEMP1: H6 x0 H9 E (F & x0 ~: B) x. lets TEMP2: TEMP1 U.
-    forwards~: TEMP2; try solve [rewrite~ concat_assoc].
-    rewrite~ <- concat_assoc.
-    apply typing_regular in TypU. destruct TypU as [OK [LC _]]. auto.
+    rewrite <- concat_assoc.
+    eapply H6; eauto; rewrite~ concat_assoc.
+    forwards* (?&?&?): typing_regular TypU.
  - apply typ_inter; auto.
    eapply IHTypT1; auto.
    eapply IHTypT2; auto.
  - apply typ_prim; auto.
    apply okt_strengthen in H. auto.
 Qed.
-*)
 
 (* ********************************************************************** *)
 (** Typing Inversion Properties *)
@@ -446,14 +439,38 @@ Lemma abs_typ_arrow_sub : forall PG G A0 B0 e A,
 typing PG G (e_abs A0 B0 e) A ->
 sub PG (t_arrow A0 B0) A.
 Proof.
-Admitted.
+  introv Typ. remember (e_abs A0 B0 e) as abs.
+  induction Typ; try discriminate.
+  - eapply sub_transitivity; eauto.
+  - inverts Heqabs. auto.
+  - apply s_anda; eauto.
+    forwards S: IHTyp1 Heqabs.
+    forwards (?&WF&?): subtyping_regular S. exact WF.
+Qed.
 
 Lemma inv_and_arrow : forall PG G A0 B0 e A1 A2 B1 B2,
   typing PG G (e_abs A0 B0 e) (t_and A1 A2) ->
   sub PG (t_and A1 A2) (t_arrow B1 B2) ->
   sub PG A1 (t_arrow B1 B2) \/ sub PG A2 (t_arrow B1 B2).
 Proof.
-Admitted.
+  introv Typ Sub.
+  forwards S: abs_typ_arrow_sub Typ.
+  assert (Nonempty: contains_arrow (t_and A1 A2) <> false).
+  { intro Empty. forwards Contra: sub_contains_arrow S Empty. discriminate. }
+  inverts Sub; eauto; contradiction.
+Qed.
+
+Lemma abs_typ_body : forall PG G A0 B0 e A,
+  typing PG G (e_abs A0 B0 e) A ->
+  exists L, forall x, x \notin L ->
+    typing PG (G & x ~: A0) (e open_ee_var x) B0.
+Proof.
+  introv Typ. remember (e_abs A0 B0 e) as abs.
+  induction Typ; try discriminate.
+  - apply IHTyp; auto.
+  - inverts Heqabs. exists L. auto.
+  - apply IHTyp1; auto.
+Qed.
 
 Lemma inv_abs_sub : forall PG G A0 B0 e A B1 B2,
     typing PG G (e_abs A0 B0 e) A ->
@@ -461,21 +478,54 @@ Lemma inv_abs_sub : forall PG G A0 B0 e A B1 B2,
            (exists L, forall x , x \notin  L -> typing PG (G & x ~: A0) (e open_ee_var x) B0)
            /\ sub PG (t_arrow A0 B0) (t_arrow B1 B2).
 Proof.
-Admitted.
+  introv Typ Sub. split.
+  - eapply abs_typ_body; eauto.
+  - eapply sub_transitivity; [eapply abs_typ_arrow_sub; eauto|eauto].
+Qed.
 
 Lemma inv_arrow : forall PG G A0 B0 e A1 A2,
     typing PG G (e_abs A0 B0 e) (t_arrow A1 A2) ->
     (exists L, forall x , x \notin  L -> typing PG (G & x ~: A0) (e open_ee_var x) B0)
     /\ sub PG (t_arrow A0 B0) (t_arrow A1 A2).
 Proof.
-Admitted.
+  introv Typ. split.
+  - eapply abs_typ_body; eauto.
+  - eapply abs_typ_arrow_sub; eauto.
+Qed.
+
+Lemma abs_typ_base : forall PG G A0 B0 e A,
+  typing PG G (e_abs A0 B0 e) A ->
+  typing PG G (e_abs A0 B0 e) (t_arrow A0 B0).
+Proof.
+  introv Typ. remember (e_abs A0 B0 e) as abs.
+  induction Typ; try discriminate.
+  - apply IHTyp; auto.
+  - inverts Heqabs. eapply typ_abs; eauto.
+  - apply IHTyp1; auto.
+Qed.
+
+Lemma abs_typ_ord : forall PG G A0 B0 e A,
+  typing PG G (e_abs A0 B0 e) A -> Ord B0.
+Proof.
+  introv Typ. remember (e_abs A0 B0 e) as abs.
+  induction Typ; try discriminate.
+  - apply IHTyp; auto.
+  - inverts Heqabs. auto.
+  - apply IHTyp1; auto.
+Qed.
 
 Lemma inv_abs_union : forall PG G A0 B0 e A A1 A2,
     typing PG G (e_abs A0 B0 e) A ->
     sub PG A (t_union A1 A2) ->
     typing PG G (e_abs A0 B0 e) A1 \/ typing PG G (e_abs A0 B0 e) A2.
 Proof.
-Admitted.
+  introv Typ Sub.
+  forwards S: abs_typ_arrow_sub Typ.
+  assert (SU: sub PG (t_arrow A0 B0) (t_union A1 A2)).
+  { eapply sub_transitivity; eauto. }
+  forwards Base: abs_typ_base Typ.
+  inverts SU; eauto; discriminate.
+Qed.
 
 
 Lemma inv_null : forall PG E A,
@@ -513,8 +563,6 @@ Lemma check_or_typ : forall PG E e A B,
    typing PG E e (t_union A B) ->
    typing PG E e A \/ typing PG E e B.
 Proof.
-Admitted.
-(*
   introv Val Typ.
   inverts Val.
   (*subsumption again*)
@@ -527,7 +575,6 @@ Admitted.
  - apply inv_P in Typ; auto. destruct Typ.
    inverts H0. left*. right*. inverts H4.
 Qed.
-*)
 
 Lemma val_check_disjoint_types : forall PG E v A B,
 PG |- A *s B ->
@@ -535,8 +582,6 @@ value v ->
 typing PG E v A ->
 typing PG E v B -> False.
 Proof.
-Admitted.
-(*
   introv Disj Val Typ1 Typ2.
   unfold DisjSpec in Disj. unfold not in Disj.
   inverts Val.
@@ -544,9 +589,11 @@ Admitted.
     apply inv_int in Typ2; auto. destruct Typ2.
     forwards*(?&WFT1&WFT2): subtyping_regular H2.
     forwards*(?&WFT11&WFT21): subtyping_regular H0.
-  - apply abs_typ_arrow_sub in Typ1; auto.
+  - forwards OB: abs_typ_ord Typ1.
+    apply abs_typ_arrow_sub in Typ1; auto.
     apply abs_typ_arrow_sub in Typ2; auto.
     lets(?&WFT1&WFT2): subtyping_regular Typ1. inverts WFT1.
+    lets(?&?&WFTB): subtyping_regular Typ2.
     forwards*: Disj (t_arrow A0 B0).
   - apply inv_null in Typ1; auto. destruct Typ1.
     apply inv_null in Typ2; auto. destruct Typ2.
@@ -559,15 +606,12 @@ Admitted.
     lets(?&WFT3&WFT4): subtyping_regular H0.
     forwards*: Disj (t_prim P).
 Qed.
-*)
 
 Lemma check_find_type : forall PG E e A B,
 typing PG E e A ->
 findtype e B ->
 sub PG B A.
 Proof.
-Admitted.
-(*
   introv Typ Find.
   inductions Find.
   - apply inv_int in Typ; auto.
@@ -576,7 +620,6 @@ Admitted.
   - apply inv_null in Typ; auto. destruct~ Typ.
   - apply inv_P in Typ; auto. destruct Typ. auto. 
 Qed.
-*)
 
 (*******************************)
 (****  Preservation Lemma  *****)
@@ -584,13 +627,18 @@ Qed.
 
 (* Theorem 7 *)
 
-Lemma preservation : forall PG E e e' T,
+ Lemma typed_findtype_ord : forall PG E e A C,
+   typing PG E e A -> findtype e C -> Ord C.
+ Proof.
+   introv Typ Find. inverts Find; auto.
+   forwards OB: abs_typ_ord Typ. auto.
+ Qed.
+
+ Lemma preservation : forall PG E e e' T,
   typing PG E e T ->
   PG |- e --> e' ->
   typing PG E e' T.
 Proof.
-Admitted.
-(*
   introv Typ. gen e'.
   inductions Typ; introv Red; try solve [ inverts Red ].
   - (* app *)
@@ -617,6 +665,7 @@ Admitted.
         forwards: TEMP4 TEMP3 TEMP5.
         rewrite* (@subst_ee_intro x).
         inverts H7.
+            discriminate.
   - (*case subsumption*)
     inverts* Red.
   - (* typeof *)
@@ -639,9 +688,10 @@ Admitted.
      * (*false goal, value e checks against disjoint types A and B*)
        lets temp2: check_find_type PG G e B C0.
        lets SubB: temp2 H8 H16.
+      forwards OC: typed_findtype_ord H8 H16.
+      lets (?&WFC0&?): subtyping_regular SubB.
        unfold DisjSpec in H7. unfold not in H7.
-       apply (H7 C0); auto.
-       apply s_anda; eauto.
+      exfalso. apply (H7 C0); auto.
     +  (* value checks against disjoint types *)
       lets temp: check_or_typ PG G e A B.
       lets DisjOr: temp H15 Typ.
@@ -649,9 +699,10 @@ Admitted.
      * (*false goal, value e checks against disjoint types A and B*)
         lets temp1: check_find_type PG G e A C0.
         lets SubA: temp1 H8 H16.
+         forwards OC: typed_findtype_ord H8 H16.
+         lets (?&WFC0&?): subtyping_regular SubA.
         unfold DisjSpec in H7. unfold not in H7.
-        apply (H7 C0); auto.
-        apply s_anda; eauto.
+         exfalso. apply (H7 C0); auto.
      * (*true goal*)
         pick_fresh y. assert (NOTIN: (y \notin L)) by auto.
         forwards temp2: H5 NOTIN.
@@ -664,7 +715,6 @@ Admitted.
         rewrite* (@subst_ee_intro y).
     - forwards*: IHTyp1.
 Qed.
-*)
 
 (*******************************)
 (******  Progress Lemma  *******)
@@ -675,8 +725,6 @@ Qed.
 Lemma progress : forall PG e T,
 typing PG empty e T -> (value e) \/ (exists e', PG |- e --> e').
 Proof.
-Admitted.
-(*
 introv Typ. gen_eq E: (@empty typ). lets Typ': Typ.
 inductions Typ; intros EQ; subst.
 (*case int*)
@@ -800,7 +848,6 @@ inductions Typ; intros EQ; subst.
   - left*.
     (* we make e_new a value? *)
 Qed.
-*)
 
 (* ********************************************************************** *)
 (** More Typing Inversion Properties *)
@@ -809,8 +856,6 @@ Lemma inv_app : forall PG E e1 e2 A,
 typing PG E (e_app e1 e2) A ->
 exists A1 B1, typing PG E e1 (t_arrow A1 B1) /\ typing PG E e2 A1.
 Proof.
-Admitted.
-(*
   introv Typ.
   inductions Typ.
  - exists* A B.
@@ -818,14 +863,11 @@ Admitted.
   forwards*: IHTyp.
  - forwards*: IHTyp1.
 Qed.
-*)
 
 Lemma inv_typeof : forall PG E e e1 e2 A B C,
 typing PG E (e_typeof e A e1 B e2) C ->
 exists D, typing PG E e D /\ PG |- A *s B.
 Proof.
-Admitted.
-(*
   introv Typ.
   inductions Typ.
   - specialize (IHTyp e e1 e2 A B).
@@ -833,7 +875,6 @@ Admitted.
   - exists* (t_union A B).
   - forwards*: IHTyp1.
 Qed.
-*)
 
 (*******************************)
 (*****  Determinism Lemma  *****)
@@ -844,8 +885,6 @@ Qed.
 Lemma determinism : forall PG E e e1 e2 A, typing PG E e A ->
 PG |- e --> e1 -> PG |- e --> e2 -> e1 = e2.
 Proof.
-Admitted.
-(*
   introv Typ He1. gen e2 A.
   induction He1; introv Typ He2.
   (*case step-appl*)
@@ -890,7 +929,8 @@ Admitted.
       unfold DisjSpec in Disj. unfold not in Disj.
       lets(?&WFT1&WFT2): subtyping_regular H2.
       lets(?&WFT3&WFT4): subtyping_regular H12.
-      forwards*: Disj (t_arrow A B).
+      forwards OB: abs_typ_ord H3.
+      forwards*: Disj (t_arrow A1 B0).
     * inverts H1. inverts H11.
       forwards*: Disj t_unit.
       lets(?&WFT1&WFT2): subtyping_regular H2.
@@ -917,7 +957,8 @@ Admitted.
     * inverts H1.
       inverts H11.
       unfold DisjSpec in Disj. unfold not in Disj.
-      forwards*: Disj (t_arrow A B).
+      forwards OB: abs_typ_ord H3.
+      forwards*: Disj (t_arrow A1 B0).
     * inverts H1. inverts H11.
       forwards*: Disj t_unit.
       assert (sub PG t_unit (t_and A B)) by auto.
@@ -926,7 +967,6 @@ Admitted.
       assert (PG |- (t_prim P) <: (t_and A B)) by auto.
       forwards*: Disj (t_prim P).
 Qed.
-*)
 
 (**************************************************)
 (* Lemma: Intersection Types Disjoint *)
@@ -938,8 +978,6 @@ Lemma intersection_type_disjointness :
   DisjSpec PG A C \/ DisjSpec PG B C ->
   DisjSpec PG (t_and A B) C.
 Proof.
-Admitted.
-(*
   introv Ok WFA WFB WFC Disj.
   unfold DisjSpec in *. unfold not in *.
   destruct Disj as [Disj | Disj]; introv ORD SUB.
@@ -950,4 +988,3 @@ Admitted.
   apply sub_and in H. destruct H.
   forwards*: subtyping_regular H0.
 Qed.
-*)

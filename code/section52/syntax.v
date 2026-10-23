@@ -11,6 +11,7 @@
 
 Require Import TLC.LibLN.
 Require Import Program.Equality.
+Require Import Lia.
 Require Import Coq.Lists.ListSet.
 Require Export Lists.List.
 Export ListNotations.
@@ -492,12 +493,34 @@ Hint Resolve sub_refl : core.
 Lemma sub_or (PG: envp) : forall A B C, sub PG (t_union A B) C ->
   sub PG A C /\ sub PG B C.
 Proof.
-Admitted.
+  intros A B C S. remember (t_union A B) as T eqn:E.
+  revert A B E. induction S; intros X Y E; inversion E; subst;
+    try solve [inversion H0; split; eauto].
+  - split; assumption.
+  - destruct (IHS X Y eq_refl); inversion H0; split; eauto.
+  - destruct (IHS X Y eq_refl); inversion H0; split; eauto.
+  - destruct (IHS1 X Y eq_refl), (IHS2 X Y eq_refl);
+      inversion H0; split; eauto.
+  - inversion H0; subst.
+    assert (F: FindSubtypes PG X = [] /\ FindSubtypes PG Y = []).
+    { eapply union_findsubtypes_empty_elim; eauto. }
+    simpl in H3. apply Bool.orb_false_iff in H3.
+    destruct F, H3. split; eauto.
+Qed.
 
 Lemma sub_and (PG: envp) : forall A B C, sub PG A (t_and B C) -> 
  sub PG A B /\ sub PG A C.
 Proof.
-Admitted.
+  intros A B C S. remember (t_and B C) as T eqn:E.
+  revert B C E. induction S; intros X Y E; inversion E; subst;
+    try solve [inversion H0; split; eauto].
+  - destruct (IHS1 X Y eq_refl), (IHS2 X Y eq_refl);
+      inversion H0; split; eauto.
+  - split; assumption.
+  - destruct (IHS X Y eq_refl); inversion H0; split; eauto.
+  - destruct (IHS X Y eq_refl); inversion H0; split; eauto.
+  - inversion H1; split; eauto.
+Qed.
 
 Lemma prim_type_in_nats_to_types : forall (A : typ) (l : list nat), 
   set_In A (nats_to_types l) ->
@@ -536,7 +559,17 @@ Lemma arrow_in_top_bot (PG: envp) : forall A B C,
 set_In (t_arrow A B) (FindSubtypes PG C) ->
 False.
 Proof.
-Admitted.
+  intros A B C. induction C; simpl; intros IN;
+    try solve [inversion IN].
+  - destruct IN as [E | [E | IN]]; try discriminate.
+    apply prim_type_in_nats_to_types in IN.
+    destruct IN as [i E]. discriminate.
+  - destruct IN as [E | IN]; [discriminate | contradiction].
+  - apply set_union_elim in IN. destruct IN; auto.
+  - apply set_inter_elim1 in IN. auto.
+  - destruct IN as [E | IN]; [discriminate | contradiction].
+  - apply prim_type_in in IN. destruct IN as [i E]. discriminate.
+Qed.
 
 Lemma prim_subtypes_not_empty : forall PG i,
   okenvp PG -> wft PG (t_prim i) -> 
@@ -566,14 +599,35 @@ Lemma ord_in_findsubtypes (PG: envp) : forall A B,
   Ord A -> sub PG A B -> set_In A (FindSubtypes PG B) \/ 
   (exists t1 t2, A = t_arrow t1 t2).
 Proof.
-Admitted.
+  intros A B OK WA WB O S. revert WA WB O.
+  induction S; intros WA WB O; inversion O; subst;
+    simpl in *; eauto using set_union_intro1, set_union_intro2,
+      set_inter_intro, i_in_nat_to_types.
+  all: try solve [inversion WA; eauto using i_in_nat_to_types].
+  all: try solve [
+    destruct (IHS ltac:(eauto) ltac:(eauto) ltac:(eauto))
+      as [IN | [U [V E]]]; try discriminate E;
+    eauto using set_union_intro1, set_union_intro2].
+  all: try solve [
+    destruct (IHS1 ltac:(eauto) ltac:(eauto) ltac:(eauto))
+      as [IN1 | [U [V E]]]; try discriminate E;
+    destruct (IHS2 ltac:(eauto) ltac:(eauto) ltac:(eauto))
+      as [IN2 | [U [V E]]]; try discriminate E;
+    eauto using set_inter_intro].
+  all: simpl in H2; discriminate.
+Qed.
 
 Lemma ord_sub_findsubtypes_not_empty (PG: envp) : forall A B, 
 Ord A -> sub PG A B ->
 (forall t1 t2, A <> t_arrow t1 t2) ->
 (FindSubtypes PG B) <> [].
 Proof.
-Admitted.
+  intros A B O S NA E.
+  destruct (subtyping_regular PG A B S) as [OK [WA WB]].
+  destruct (ord_in_findsubtypes PG A B OK WA WB O S) as [IN | [X [Y EQ]]].
+  - rewrite E in IN. inversion IN.
+  - eapply NA; eauto.
+Qed.
 
 Lemma list_append_findsubtypes_in (PG: envp) : forall t l A, (t :: l) = FindSubtypes PG A ->
 set_In t (FindSubtypes PG A).
@@ -802,7 +856,9 @@ okenvp PG -> wft PG A -> wft PG B ->
 FindSubtypes PG A = [] -> sub PG B A ->
 (forall t1 t2, B <> t_arrow t1 t2) -> not (Ord B).
 Proof.
-Admitted.
+  intros A B OK WA WB E S NA O.
+  eapply (ord_sub_findsubtypes_not_empty PG B A O S NA). exact E.
+Qed.
 
 Lemma findsubtypes_not_empty (PG: envp) : forall A,
 FindSubtypes PG A <> [] -> exists B, set_In B (FindSubtypes PG A).
@@ -3004,7 +3060,24 @@ Qed.
 Lemma set_in_sub (PG: envp) : forall A x, set_In x (FindSubtypes PG A) ->
 forall B, sub PG A B -> set_In x (FindSubtypes PG B).
 Proof.
-Admitted.
+  intros A x IN B S. revert x IN.
+  induction S; intros x IN; simpl in *;
+    eauto using set_union_intro1, set_union_intro2, set_inter_intro,
+      set_inter_elim1, set_inter_elim2.
+  - forwards WX: wft_p_in_findsubtypes H H0 IN.
+    forwards OX: elem_in_findsubtypes_ord H H0 WX IN.
+    inversion OX; subst; simpl; eauto using i_in_nat_to_types.
+    + exfalso. eapply arrow_in_top_bot; eauto.
+    + inversion WX. eauto using i_in_nat_to_types.
+  - apply set_union_elim in IN. destruct IN; auto.
+  - rewrite H2 in IN. inversion IN.
+  - destruct IN as [E | IN].
+    + subst. auto.
+    + apply prim_type_in_nats_to_types in IN as EX.
+      destruct EX as [i E]. subst.
+      right. eapply p_in_sub; eauto.
+  Unshelve. exact eq_dec.
+Qed.
 
 Lemma findsubtypes_sub_empty (PG: envp) : forall A1 A2 B,
 FindSubtypes PG (t_and A1 A2) = [] -> 
@@ -3023,10 +3096,56 @@ Defined.
 (*******  sub Properties  *******)
 (********************************)
 
+Lemma sub_contains_arrow (PG: envp) : forall A B,
+  sub PG A B -> contains_arrow B = false -> contains_arrow A = false.
+Proof.
+  intros A B S. induction S; simpl; intros E; try discriminate; auto.
+  - apply Bool.orb_false_iff. split; auto.
+  - apply Bool.orb_false_iff in E. destruct E; auto.
+  - apply Bool.orb_false_iff in E. destruct E; auto.
+  - apply Bool.andb_false_iff in E. destruct E; auto.
+  - apply Bool.andb_false_iff. left. auto.
+  - apply Bool.andb_false_iff. right. auto.
+Qed.
+
 Lemma sub_transitivity (PG: envp) : forall B A C, PG |- A <: B -> 
  sub PG B C -> sub PG A C.
 Proof.
-Admitted.
+  induction B; intros;
+    generalize H0 H; clear H0 H; generalize A; clear A.
+  - intros. inductions H0; try solve [inverts H4; eauto]. auto.
+    inverts* H3.
+  - intros. inductions H; eauto; try solve [inverts* H0].
+  - intros. inductions H; eauto; try solve [inverts* H0].
+  - induction C; intros;
+      forwards* (OK&WFT1&WFT2): subtyping_regular H0;
+      forwards* (?&WFT3&WFT4): subtyping_regular H;
+      try solve [inverts H0; simpl in *; try discriminate; eauto].
+    clear IHC1 IHC2.
+    inductions H; eauto. clear IHsub1 IHsub2. inverts* H0.
+  - intros. apply sub_or in H0. destruct H0.
+    forwards* (OK&WFTA&WFT): subtyping_regular H. inverts WFT.
+    forwards* (?&?&WFTC): subtyping_regular H0. clear H3 H2.
+    inductions H; eauto.
+  - intros. apply sub_and in H. destruct H.
+    forwards* (OK&WFT1&WFT2): subtyping_regular H0. inverts WFT1.
+    forwards* (?&WFTA&?): subtyping_regular H. clear H2 H3.
+    inductions H0; eauto.
+    assert (S: sub PG A (t_and B1 B2)) by auto.
+    eapply s_disj; eauto.
+    + eapply findsubtypes_sub_empty; eauto.
+    + eapply sub_contains_arrow; eauto.
+  - intros. inductions H0; try solve [inverts* H1; inverts* H4]; auto.
+    forwards*: IHsub1. forwards*: IHsub2.
+    forwards*: subtyping_regular H3.
+  - intros. inductions H0; eauto. inverts* H1.
+    forwards*: IHsub. inverts* H4.
+    forwards*: IHsub. inverts* H4.
+    forwards*: IHsub1. forwards*: IHsub2.
+    inverts* H3. forwards*: subtyping_regular H3.
+    inductions H3; eauto.
+    forwards*: IHsub1 n. forwards*: p_in_sub H6 H2.
+Qed.
 (*
 induction B; intros;
 generalize H0 H; clear H0; clear H; generalize A; clear A.
@@ -3114,16 +3233,194 @@ Inductive DisjAlgo (PG: envp) : typ -> typ -> Prop :=
     DisjAlgo PG A B.
 Notation "G |- A *a B" := (DisjAlgo G A B) (at level 80, A at next level).
 
+Lemma wft_funrange : forall PG A, wft PG A -> wft PG (FunRange A).
+Proof.
+  induction 1; simpl; auto;
+    destruct (FunRange A); destruct (FunRange B); auto.
+Qed.
+
+Lemma ord_sub_bot_false : forall PG C,
+  Ord C -> sub PG C t_bot -> False.
+Proof.
+  intros PG C O S. inversion S; subst; inversion O; subst;
+    simpl in *; try discriminate; intuition discriminate.
+Qed.
+
+Lemma range_union_l : forall PG C A B,
+  Ord C -> okenvp PG -> wft PG A -> wft PG B ->
+  sub PG C (FunRange A) -> sub PG C (FunRange (t_union A B)).
+Proof.
+  intros PG C A B O OK WA WB S.
+  destruct (subtyping_regular PG C (FunRange A) S) as [_ [WC _]].
+  pose proof (wft_funrange PG A WA).
+  pose proof (wft_funrange PG B WB).
+  simpl. destruct (FunRange A); destruct (FunRange B); simpl in *; eauto;
+    exfalso; eapply ord_sub_bot_false; eauto.
+Qed.
+
+Lemma range_union_r : forall PG C A B,
+  Ord C -> okenvp PG -> wft PG A -> wft PG B ->
+  sub PG C (FunRange B) -> sub PG C (FunRange (t_union A B)).
+Proof.
+  intros PG C A B O OK WA WB S.
+  destruct (subtyping_regular PG C (FunRange B) S) as [_ [WC _]].
+  pose proof (wft_funrange PG A WA).
+  pose proof (wft_funrange PG B WB).
+  simpl. destruct (FunRange A); destruct (FunRange B); simpl in *; eauto;
+    exfalso; eapply ord_sub_bot_false; eauto.
+Qed.
+
+Lemma range_and : forall PG C A B,
+  Ord C -> okenvp PG -> wft PG A -> wft PG B ->
+  sub PG C (FunRange A) -> sub PG C (FunRange B) ->
+  sub PG C (FunRange (t_and A B)).
+Proof.
+  intros PG C A B O OK WA WB S T.
+  destruct (subtyping_regular PG C (FunRange A) S) as [_ [WC _]].
+  pose proof (wft_funrange PG A WA).
+  pose proof (wft_funrange PG B WB).
+  simpl. destruct (FunRange A); destruct (FunRange B); simpl in *; eauto;
+    exfalso; eapply ord_sub_bot_false; eauto.
+Qed.
+
+Lemma arrow_sub_funrange : forall PG X Y A,
+  Ord Y -> sub PG (t_arrow X Y) A -> sub PG Y (FunRange A).
+Proof.
+  intros PG X Y A O S. remember (t_arrow X Y) as D eqn:E.
+  revert X Y E O. induction S; intros X Y E O; inversion E; subst;
+    simpl in *; try discriminate; eauto.
+  - inversion H0; eauto.
+  - eapply range_union_l; eauto.
+  - eapply range_union_r; eauto.
+  - eapply range_and; eauto.
+Qed.
+
 Lemma Disj_soundness (PG: envp) : forall A B,
   okenvp PG -> wft PG A -> wft PG B ->
   PG |- A *a B -> PG |- A *s B.
 Proof.
-Admitted.
+  intros A B OK WA WB DA. revert WA WB.
+  induction DA; intros WA WB C OC S;
+    destruct (subtyping_regular PG C (t_and A B) S) as [_ [WC WAB]];
+    destruct (ord_in_findsubtypes PG C (t_and A B) OK WC WAB OC S)
+      as [IN | [X [Y E]]].
+  all: try solve [simpl in IN; rewrite H in IN; inversion IN].
+  all: subst C; inversion OC; subst;
+    apply sub_and in S; destruct S as [SA SB].
+  - pose proof (arrow_sub_funrange PG X Y A H2 SA) as R.
+    rewrite H0 in R. eapply ord_sub_bot_false; eauto.
+  - pose proof (arrow_sub_funrange PG X Y B H2 SB) as R.
+    rewrite H0 in R. eapply ord_sub_bot_false; eauto.
+  - eapply IHDA; eauto using wft_funrange.
+    eapply s_anda; eauto using wft_funrange, arrow_sub_funrange.
+    inversion WC; auto.
+Qed.
+
+Lemma fs_empty_from_spec : forall PG A B,
+  okenvp PG -> wft PG A -> wft PG B -> DisjSpec PG A B ->
+  FindSubtypes PG (t_and A B) = [].
+Proof.
+  intros PG A B OK WA WB D.
+  destruct (list_empty_decide (FindSubtypes PG (t_and A B))) as [E|NE]; auto.
+  destruct (findsubtypes_not_empty PG (t_and A B) NE) as [C IN].
+  assert (WAB: wft PG (t_and A B)) by auto.
+  pose proof (wft_p_in_findsubtypes PG (t_and A B) C OK WAB IN) as WC.
+  exfalso. apply (D C).
+  - exact (elem_in_findsubtypes_ord PG (t_and A B) C OK WAB WC IN).
+  - exact (elem_in_findsubtypes_sub PG (t_and A B) C OK WAB WC IN).
+Qed.
+
+Lemma ord_sub_union : forall PG C A B,
+  Ord C -> sub PG C (t_union A B) -> sub PG C A \/ sub PG C B.
+Proof.
+  intros PG C A B O S. inversion S; subst; inversion O; subst;
+    simpl in *; eauto; discriminate.
+Qed.
+
+Lemma funrange_top_arrow : forall PG A C,
+  okenvp PG -> wft PG A -> wft PG C -> Ord C ->
+  sub PG C (FunRange A) -> sub PG (t_arrow t_top C) A.
+Proof.
+  intros PG A. induction A; intros C OK WA WC OC S; simpl in S;
+    try solve [exfalso; eapply ord_sub_bot_false; eauto]; eauto.
+  - inversion WA; subst. eapply s_arrow; eauto.
+  - inversion WA; subst.
+    destruct (FunRange A1) eqn:E1; destruct (FunRange A2) eqn:E2;
+      try solve [exfalso; eapply ord_sub_bot_false; eauto];
+      try solve [eapply s_orb; eauto];
+      try solve [eapply s_orc; eauto];
+      (apply ord_sub_union in S; [destruct S;
+        [eapply s_orb | eapply s_orc]; eauto | exact OC]).
+  - inversion WA; subst.
+    destruct (FunRange A1) eqn:E1; destruct (FunRange A2) eqn:E2;
+      try solve [exfalso; eapply ord_sub_bot_false; eauto];
+      apply sub_and in S; destruct S; eapply s_anda; eauto.
+Qed.
+
+Fixpoint disj_size (A:typ) : nat :=
+  match A with
+  | t_arrow A B | t_union A B | t_and A B => S (disj_size A + disj_size B)
+  | _ => 1
+  end.
+
+Lemma disj_size_pos : forall A, 1 <= disj_size A.
+Proof. destruct A; simpl; lia. Qed.
+
+Lemma disj_size_range : forall A, disj_size (FunRange A) <= disj_size A.
+Proof.
+  induction A; simpl; try lia;
+    destruct (FunRange A1); destruct (FunRange A2); simpl in *;
+    pose proof (disj_size_pos A1); pose proof (disj_size_pos A2); lia.
+Qed.
+
+Lemma int_sub_toplike : forall PG A,
+  okenvp PG -> wft PG A -> FunRange A <> t_bot ->
+  disj_size A <= disj_size (FunRange A) -> sub PG t_int A.
+Proof.
+  intros PG A. induction A; intros OK WA NZ GE; simpl in *;
+    try congruence; try solve [auto]; try lia.
+  - inversion WA; subst.
+    pose proof (disj_size_range A1). pose proof (disj_size_range A2).
+    destruct (FunRange A1); destruct (FunRange A2); simpl in *;
+      try lia; eapply s_orb; eauto; apply IHA1; auto; try discriminate; lia.
+  - inversion WA; subst.
+    pose proof (disj_size_range A1). pose proof (disj_size_range A2).
+    destruct (FunRange A1); destruct (FunRange A2); simpl in *;
+      try congruence; eapply s_anda; eauto;
+      first [apply IHA1 | apply IHA2]; auto; try discriminate; lia.
+Qed.
+
+Lemma Disj_completeness_n : forall n PG A B,
+  disj_size A + disj_size B <= n ->
+  okenvp PG -> wft PG A -> wft PG B ->
+  DisjSpec PG A B -> DisjAlgo PG A B.
+Proof.
+  induction n; intros PG A B LE OK WA WB D.
+  - pose proof (disj_size_pos A). pose proof (disj_size_pos B). lia.
+  - pose proof (fs_empty_from_spec PG A B OK WA WB D) as FS. simpl in FS.
+    destruct (eq_dec (FunRange A) t_bot) as [EA|EA].
+    + apply da_nfun_l; auto.
+    + destruct (eq_dec (FunRange B) t_bot) as [EB|EB].
+      * apply da_nfun_r; auto.
+      * apply da_peel; auto.
+        destruct (Compare_dec.lt_dec
+          (disj_size (FunRange A) + disj_size (FunRange B))
+          (disj_size A + disj_size B)) as [LT|GE].
+        -- apply IHn; eauto using wft_funrange; try lia.
+           intros C OC S. apply sub_and in S. destruct S as [SA SB].
+           destruct (subtyping_regular PG C (FunRange A) SA) as [_ [WC _]].
+           apply (D (t_arrow t_top C)); auto.
+           eapply s_anda; eauto using funrange_top_arrow.
+        -- exfalso. pose proof (disj_size_range A). pose proof (disj_size_range B).
+           apply (D t_int); auto. eapply s_anda; eauto;
+             eapply int_sub_toplike; eauto; lia.
+Qed.
 
 Lemma Disj_completeness (PG: envp) : forall A B, okenvp PG -> wft PG A -> wft PG B ->
   PG |- A *s B -> PG |- A *a B.
 Proof.
-Admitted.
+  intros. eapply Disj_completeness_n; eauto.
+Qed.
 
 (* Disjont Intersections are Bottom-Like *)
 
@@ -3131,6 +3428,11 @@ Admitted.
 
 Lemma disj_bot_like (PG: envp) : forall A B,
   okenvp PG -> wft PG A -> wft PG B ->
+  contains_arrow (t_and A B) = false ->
   PG |- A *a B -> sub PG (t_and A B) t_bot.
 Proof.
-Admitted.
+  (* Disjoint arrows can have disjoint ranges while contains_arrow remains
+     true. The generalized empty-type rule therefore needs this hypothesis. *)
+  intros A B OK WA WB NF DA.
+  inversion DA; subst; eapply s_disj; simpl; eauto.
+Qed.
